@@ -2,7 +2,7 @@
 
 Oct 31, 2026 · @Tim Jansen
 
-Latest version on GitHub: [RFC-2-HTML-Subset-for-Feed-Content.md](https://github.com/downread/RFCs/blob/main/RFC-2-HTML-Subset-for-Feed-Content.md) · [Change history](https://github.com/downread/RFCs/commits/main/RFC-2-HTML-Subset-for-Feed-Content.md)
+Latest version on GitHub: [RFC-2-HTML-Subset-for-Feed-Content.md](https://github.com/bigwide-net/RFCs/blob/main/RFC-2-HTML-Subset-for-Feed-Content.md) · [Change history](https://github.com/bigwide-net/RFCs/commits/main/RFC-2-HTML-Subset-for-Feed-Content.md)
 
 ## Summary
 
@@ -13,7 +13,7 @@ It has two audiences:
 - **Blog authors and feed generators**: write within the subset, and the post renders as intended in every reader that supports Feed HTML. Anything outside it may be dropped.
 - **Reader authors**: support at least the subset, so that authors can rely on it. A reader may show more, but should not show less.
 
-**Why now.** Every reader sanitizes feed HTML, because feed content is untrusted and has to sit inside the reader's own page. But every reader does it differently and none documents it, so authors find out what works by testing in each reader, or not at all. The result is posts that lose their videos, tables or images in some readers, and readers that each rediscover the same rules. The subset here is what Downread implements today, minus everything that only exists to repair broken feeds.
+**Why now.** Every reader sanitizes feed HTML, because feed content is untrusted and has to sit inside the reader's own page. But every reader does it differently and none documents it, so authors find out what works by testing in each reader, or not at all. The result is posts that lose their videos, tables or images in some readers, and readers that each rediscover the same rules. The subset here is what Downread, a reader that supports Big Wide, implements today, minus everything that only exists to repair broken feeds.
 
 **Out of scope.** Readers also need workarounds for feeds that are broken: lazy-loading images without a `src`, embeds that depend on stripped scripts, CMS-specific markup. Those are not part of this subset. A feed that follows this document needs none of them.
 

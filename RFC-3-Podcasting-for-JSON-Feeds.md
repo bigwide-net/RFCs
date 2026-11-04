@@ -2,7 +2,7 @@
 
 Nov 1, 2026 · @Tim Jansen
 
-Latest version on GitHub: [RFC-3-Podcasting-for-JSON-Feeds.md](https://github.com/downread/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md) · [Change history](https://github.com/downread/RFCs/commits/main/RFC-3-Podcasting-for-JSON-Feeds.md)
+Latest version on GitHub: [RFC-3-Podcasting-for-JSON-Feeds.md](https://github.com/bigwide-net/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md) · [Change history](https://github.com/bigwide-net/RFCs/commits/main/RFC-3-Podcasting-for-JSON-Feeds.md)
 
 ## Summary
 
@@ -18,12 +18,12 @@ Everything goes into one object named `_podcast`, following JSON Feed's [extensi
 
 ```json
 "_podcast": {
-  "about": "https://github.com/downread/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md"
+  "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md"
 }
 ```
 
 - It may appear on the **feed** (show-level fields), on an **item** (episode-level fields) and on a **live item** (see [Live items](#live-items)).
-- `about` should be `https://github.com/downread/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md`, this document. **This is not its final location**: the URL will change once the spec has a permanent home. Readers must therefore **ignore the value of `about`**: they recognize the extension by the name `_podcast` alone, and read its fields whatever `about` says, or when it is missing.
+- `about` should be `https://github.com/bigwide-net/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md`, this document. **This is not its final location**: the URL will change once the spec has a permanent home. Readers must therefore **ignore the value of `about`**: they recognize the extension by the name `_podcast` alone, and read its fields whatever `about` says, or when it is missing.
 - Every field is optional. A reader ignores fields it doesn't know and values of the wrong type, so the object can grow along with the namespace.
 
 **Meaning comes from the namespace.** This document defines the JSON *shape* of each tag, nothing else. What a field means, which values it allows and how apps should use it is what the [namespace's tag documentation](https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md) says about the tag it mirrors, including its override rules: episode-level `persons` replace the show's, episode-level `values` and `chat` override the show's.
@@ -72,7 +72,7 @@ On the feed's `_podcast` object (the RSS `<channel>`):
 
 ```json
 "_podcast": {
-  "about": "https://github.com/downread/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md",
+  "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md",
   "guid": "917393e3-1b1e-5cef-ace4-edaa54e1f810",
   "medium": "podcast",
   "locked": { "value": true, "owner": "podcast@example.com" },
@@ -124,7 +124,7 @@ On an item's `_podcast` object (the RSS `<item>`):
     { "url": "https://example.com/ep42.mp3", "mime_type": "audio/mpeg", "size_in_bytes": 43200000, "duration_in_seconds": 3600 }
   ],
   "_podcast": {
-    "about": "https://github.com/downread/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md",
+    "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md",
     "season": { "number": 2 },
     "episode": { "number": 42 },
     "episodeType": "full",
@@ -227,7 +227,7 @@ The episode's main media stays in JSON Feed's `attachments`, just as the RSS `<e
 
 ```json
 "_podcast": {
-  "about": "https://github.com/downread/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md",
+  "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md",
   "podroll": [
     { "feedGuid": "29cdca4a-32d8-56ba-b48b-09a011c5daa9", "feedUrl": "https://rss.buzzsprout.com/231452.rss", "title": "Buzzcast" },
     { "feedGuid": "917393e3-1b1e-5cef-ace4-edaa54e1f810", "feedUrl": "https://feeds.podcastindex.org/pc20.xml", "title": "Podcasting 2.0" }
@@ -250,7 +250,7 @@ A list feed has no regular items of its own. JSON Feed requires the `items` arra
 
 ```json
 "_podcast": {
-  "about": "https://github.com/downread/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md",
+  "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md",
   "liveItems": [
     {
       "id": "https://example.com/live",
@@ -328,7 +328,7 @@ The other iTunes elements already have a JSON Feed field, or a namespace field a
   "language": "en",
   "authors": [{ "name": "Terry Scott", "url": "https://example.com/terry" }],
   "_podcast": {
-    "about": "https://github.com/downread/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md",
+    "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md",
     "guid": "917393e3-1b1e-5cef-ace4-edaa54e1f810",
     "medium": "podcast",
     "explicit": false,
@@ -353,7 +353,7 @@ The other iTunes elements already have a JSON Feed field, or a namespace field a
         { "url": "https://example.com/ep1.mp3", "mime_type": "audio/mpeg", "size_in_bytes": 28800000, "duration_in_seconds": 2400 }
       ],
       "_podcast": {
-        "about": "https://github.com/downread/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md",
+        "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md",
         "season": { "number": 1, "name": "Beginnings" },
         "episode": { "number": 1 },
         "episodeType": "full",

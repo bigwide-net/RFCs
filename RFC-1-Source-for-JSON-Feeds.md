@@ -2,7 +2,7 @@
 
 Oct 29, 2026 · @Tim Jansen
 
-Latest version on GitHub: [RFC-1-Source-for-JSON-Feeds.md](https://github.com/downread/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md) · [Change history](https://github.com/downread/RFCs/commits/main/RFC-1-Source-for-JSON-Feeds.md)
+Latest version on GitHub: [RFC-1-Source-for-JSON-Feeds.md](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md) · [Change history](https://github.com/bigwide-net/RFCs/commits/main/RFC-1-Source-for-JSON-Feeds.md)
 
 ## Summary
 
@@ -18,12 +18,12 @@ Everything goes into one object named `_source`, following JSON Feed's [extensio
 
 ```json
 "_source": {
-  "about": "https://github.com/downread/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md"
+  "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md"
 }
 ```
 
 - It may appear on an **item** (`inReplyTo`, `comments`, `accounts`, and in comment feeds `markdown`) and on the **feed** itself (`accounts`).
-- `about` should be `https://github.com/downread/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md`, this document. **This is not its final location**: the URL will change once the spec has a permanent home. Readers must therefore **ignore the value of `about`**: they recognize the extension by the name `_source` alone, and read its fields whatever `about` says, or when it is missing.
+- `about` should be `https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md`, this document. **This is not its final location**: the URL will change once the spec has a permanent home. Readers must therefore **ignore the value of `about`**: they recognize the extension by the name `_source` alone, and read its fields whatever `about` says, or when it is missing.
 - Every field is optional. A reader ignores fields it doesn't know and values of the wrong type, so the object can grow later.
 
 ## Item: `inReplyTo`
@@ -32,7 +32,7 @@ Everything goes into one object named `_source`, following JSON Feed's [extensio
 
 ```json
 "_source": {
-  "about": "https://github.com/downread/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
+  "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
   "inReplyTo": "https://rss.chat/?id=204"
 }
 ```
@@ -74,7 +74,7 @@ Readers show it as "In reply to …": a link for a permalink, plain text for an 
 
 ```json
 "_source": {
-  "about": "https://github.com/downread/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
+  "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
   "comments": {
     "feedUrl": "https://rss.chat/users/dave/comments/205.xml",
     "count": 2,
@@ -99,7 +99,7 @@ Replies are posts too, so an item in a comment feed carries its own `comments` f
   "date_published": "2026-07-08T14:42:55Z",
   "content_html": "<p>hey manton, great to see you here.</p><p>this is the <strong>web</strong> btw.</p>",
   "_source": {
-    "about": "https://github.com/downread/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
+    "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
     "markdown": "hey manton, great to see you here.\n\nthis is the **web** btw."
   }
 }
@@ -118,7 +118,7 @@ Replies are posts too, so an item in a comment feed carries its own `comments` f
   "version": "https://jsonfeed.org/version/1.1",
   "title": "Example Blog",
   "_source": {
-    "about": "https://github.com/downread/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
+    "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
     "accounts": {
       "socialspec": "@example.com",
       "mastodon": "@alice@mastodon.social"
@@ -142,7 +142,7 @@ Replies are posts too, so an item in a comment feed carries its own `comments` f
   "authors": [{ "name": "Dave Winer" }],
   "content_html": "<p>hey manton, great to see you here.</p>",
   "_source": {
-    "about": "https://github.com/downread/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
+    "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
     "accounts": {
       "socialspec": "@scripting.com",
       "mastodon": "@davew@mastodon.social"
@@ -202,7 +202,7 @@ When a feed carries both the source elements and an older form, the source eleme
   "home_page_url": "https://example.com/",
   "feed_url": "https://example.com/feed.json",
   "_source": {
-    "about": "https://github.com/downread/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
+    "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
     "accounts": { "socialspec": "@example.com" }
   },
   "items": [
@@ -212,7 +212,7 @@ When a feed carries both the source elements and an older form, the source eleme
       "content_html": "<p>I disagree, and here is why…</p>",
       "date_published": "2026-10-29T09:00:00Z",
       "_source": {
-        "about": "https://github.com/downread/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
+        "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
         "inReplyTo": {
           "value": "https://rss.chat/?id=204",
           "feedUrl": "https://rss.chat/users/dave/rss.xml",
