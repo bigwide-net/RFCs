@@ -120,7 +120,12 @@ Markdown rules:
 - **Not available:** thematic breaks (`---` produces `hr`, so the comment is rejected), strikethrough (`~~x~~` stays as literal text), and bare-URL autolinking by the Markdown renderer. Use `urlAutoLinking` for URLs.
 - Attributes that renderers add (`class="language-js"` on code, `style="text-align: right"` on table cells, `start` on ordered lists) are removed like any other attribute.
 
-**Length.** A group's `maxLength` is measured in characters of the form that was submitted: the Markdown if there is Markdown, the HTML otherwise, the text otherwise. Authors writing Markdown don't pay for the markup that rendering adds.
+**Length.** A group sets two limits (RFC-4's `minLength` and `maxLength`), measured differently:
+
+- `maxLength` counts the characters of the form that was submitted: the Markdown if there is Markdown, the HTML otherwise, the text otherwise. Authors writing Markdown don't pay for the markup that rendering adds.
+- `minLength` counts the **visible text** of the rendered comment: the text between the tags, with entities decoded and runs of whitespace collapsed to one space, trimmed. Block elements (`p`, `li`, `td`, headings, …) and `br` separate words like a space; inline elements (`strong`, `em`, `a`, `code`, `q`) don't. Markup never counts, so `<p><strong>Thanks!</strong></p>` has 7 characters. An image has no text: a comment that is only an image needs a `minLength` of 0.
+
+rssmention uses a `minLength` of 10 by default, which keeps out "+1" and "Thanks!" comments that add nothing to a discussion.
 
 ## Titles
 

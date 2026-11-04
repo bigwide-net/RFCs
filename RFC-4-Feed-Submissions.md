@@ -47,8 +47,8 @@ Everything else comes from existing specs. Replies, comment feeds, counts, Markd
   <rm:submissions>
     <rm:url>https://rm.example.org/groups/twowaves/mention</rm:url>
     <rm:tos>https://twowavesandadot.blog/discussion/tos.html</rm:tos>
-    <rm:policies type="posts" maxLength="8000" title="required" allowLinks="true" … commentLimit="1000"/>
-    <rm:policies type="comments" maxLength="4000" title="none" allowLinks="true" … commentLimit="20" maxDepth="5"/>
+    <rm:policies type="posts" minLength="10" maxLength="8000" title="required" allowLinks="true" … commentLimit="1000"/>
+    <rm:policies type="comments" minLength="10" maxLength="4000" title="none" allowLinks="true" … commentLimit="20" maxDepth="5"/>
     <rm:republish>true</rm:republish>
   </rm:submissions>
 </channel>
@@ -67,8 +67,8 @@ The namespace URI is `https://rssmention.bigwide.net/`. Readers should also acce
   "url": "https://rm.example.org/groups/twowaves/mention",
   "tos": "https://twowavesandadot.blog/discussion/tos.html",
   "policies": {
-    "posts": { "maxLength": 8000, "title": "required", "allowLinks": true, "commentLimit": 1000 },
-    "comments": { "maxLength": 4000, "title": "none", "allowLinks": true, "commentLimit": 20, "maxDepth": 5 }
+    "posts": { "minLength": 10, "maxLength": 8000, "title": "required", "allowLinks": true, "commentLimit": 1000 },
+    "comments": { "minLength": 10, "maxLength": 4000, "title": "none", "allowLinks": true, "commentLimit": 20, "maxDepth": 5 }
   },
   "republish": true
 }
@@ -96,6 +96,7 @@ A policy is a flat list of rules. In RSS each rule is an attribute of `<rm:polic
 | Rule | Type | Meaning |
 | --- | --- | --- |
 | `title` | `required` \| `allowed` \| `none` | Whether the item must, may or must not have a title. Comments usually use `none`. |
+| `minLength` | integer | Minimum length of the visible text in characters, after rendering and with whitespace collapsed. Markup doesn't count. |
 | `maxLength` | integer | Maximum length of the content in characters: the Markdown if the item has `markdown`, otherwise the HTML. |
 | `allowStyle` | boolean | `strong`, `em` |
 | `allowLinks` | boolean | `a` with `href` |
@@ -212,7 +213,7 @@ Status pages are short-lived: rssmention keeps them for at least an hour. Client
 | `in-reply-to-missing`, `in-reply-to-mismatch` | `inReplyTo` is missing or differs from `target`. |
 | `socialspec-missing`, `socialspec-mismatch` | See [Authorship](#authorship). |
 | `title-required`, `title-not-allowed`, `title-too-long` | The `title` rule. |
-| `empty-content`, `too-long`, `malformed-html`, `forbidden-element`, `bad-nesting`, `missing-attribute`, `invalid-url`, `url-too-long`, `link-text-too-long`, `weird-formatting` | Content rules. Servers may define more content codes. |
+| `empty-content`, `too-short`, `too-long`, `malformed-html`, `forbidden-element`, `bad-nesting`, `missing-attribute`, `invalid-url`, `url-too-long`, `link-text-too-long`, `weird-formatting` | Content rules. Servers may define more content codes. |
 | `comments-disabled`, `comment-limit`, `max-depth`, `target-gone` | The target no longer accepts the comment. |
 | `edit-not-allowed` | The source was submitted before and `allowEdit` is not set. |
 | `moderation-rejected`, `moderation-unavailable` | The server's moderation rejected the item, or could not run. |
@@ -279,13 +280,13 @@ The group feed `https://rm.example.org/groups/twowaves/posts.json` with one post
     "tos": "https://twowavesandadot.blog/discussion/tos.html",
     "policies": {
       "posts": {
-        "maxLength": 8000, "urlAutoLinking": true, "allowStyle": true, "allowLinks": true,
+        "minLength": 10, "maxLength": 8000, "urlAutoLinking": true, "allowStyle": true, "allowLinks": true,
         "allowCode": true, "allowQuote": false, "allowImages": false, "allowTables": false,
         "allowLists": true, "allowHeadlines": true, "requireSocialSpec": true, "title": "required",
         "allowEdit": false, "allowDelete": false, "commentLimit": 1000
       },
       "comments": {
-        "maxLength": 4000, "urlAutoLinking": true, "allowStyle": true, "allowLinks": true,
+        "minLength": 10, "maxLength": 4000, "urlAutoLinking": true, "allowStyle": true, "allowLinks": true,
         "allowCode": true, "allowQuote": false, "allowImages": false, "allowTables": false,
         "allowLists": false, "allowHeadlines": false, "requireSocialSpec": true, "title": "none",
         "allowEdit": false, "allowDelete": false, "commentLimit": 20, "maxDepth": 5
