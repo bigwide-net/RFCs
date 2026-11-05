@@ -40,7 +40,7 @@ Everything else comes from existing specs. Replies, comment feeds, counts, Markd
 
 ## Feed: `submissions`
 
-`submissions` describes how to submit to the feed. It may appear in the target feed and in every feed the server publishes for it: archives and comment feeds. All of them carry the same `submissions` block, so a client can submit from whatever feed it is showing. The block has separate policies for new posts and for comments, which may differ: the client applies the policy for what the author is creating, not for the feed it found the block in. See [Policies](#policies).
+`submissions` describes how to submit to the feed. It may appear in the target feed and in every feed the server publishes for it: archives and comment feeds. The block holds two policies with their own rules: `posts` for starting a new discussion in the group feed, and `comments` for replying to a post or to a comment in its thread. They usually differ: in the example below, a new discussion needs a title and may be up to 8000 characters long, while a comment in that thread has no title and is limited to 4000. See [Policies](#policies).
 
 ### RSS
 
