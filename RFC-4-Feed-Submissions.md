@@ -40,7 +40,7 @@ Everything else comes from existing specs. Replies, comment feeds, counts, Markd
 
 ## Feed: `submissions`
 
-`submissions` describes how to submit to the feed. It may appear in the target feed and in every feed the server publishes for it: archives and comment feeds. All of them carry the same rules, so a client can submit from whatever feed it is showing.
+`submissions` describes how to submit to the feed. It may appear in the target feed and in every feed the server publishes for it: archives and comment feeds. All of them carry the same `submissions` block, so a client can submit from whatever feed it is showing. The block has separate policies for new posts and for comments, which may differ: the client applies the policy for what the author is creating, not for the feed it found the block in. See [Policies](#policies).
 
 ### RSS
 
