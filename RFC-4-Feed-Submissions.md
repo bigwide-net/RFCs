@@ -16,7 +16,7 @@ The proposal adds two things to RSS (namespace `https://rssmention.bigwide.net/`
 - **`submissions`**, on the feed: where to send the webmention, the terms of service, and the rules a submission must follow (title, length, allowed HTML, comment limits, editing).
 - **`commenting`**, on an item: whether the item accepts comments.
 
-Everything else comes from existing specs. Replies, comment feeds, counts, Markdown and accounts use the [source namespace](https://source.scripting.com/) in RSS and [RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md) in JSON Feed. The allowed HTML is [Comment HTML (RFC-5)](https://github.com/bigwide-net/RFCs/blob/main/RFC-5-Comment-HTML.md). Sending a submission is a plain webmention.
+Everything else comes from existing specs. Replies, comment feeds, counts, Markdown and accounts use the [source namespace](https://source.scripting.com/) in RSS and [RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md) in JSON Feed. The allowed formatting is [Comment HTML and Markdown (RFC-5)](https://github.com/bigwide-net/RFCs/blob/main/RFC-5-Comment-HTML.md). Sending a submission is a plain webmention.
 
 [rssmention](https://github.com/bigwide-net/rssmention) is the reference implementation. It supports only `republish: full`.
 
@@ -118,7 +118,7 @@ A missing rule has the default value from the table below. Clients and servers m
 | `title` | `required` \| `allowed` \| `none` | `none` | Whether the item must, may or must not have a title. Comments usually use `none`; discussion groups usually require titles for posts. |
 | `minLength` | integer | `2` | Minimum length of the visible text in characters. See [Content](#content). |
 | `maxLength` | integer | `2000` | Maximum length of the content in characters. See [Content](#content). |
-| `allowStyle`, `allowLinks`, `allowCode`, `allowQuote`, `allowImages`, `allowTables`, `allowLists`, `allowHeadlines`, `urlAutoLinking` | boolean | `false` | The Comment HTML features that are enabled. See [Content](#content). |
+| `allowStyle`, `allowLinks`, `allowCode`, `allowQuote`, `allowImages`, `allowTables`, `allowLists`, `allowHeadlines`, `urlAutoLinking` | boolean | `false` | The Comment HTML and Markdown features that are enabled. See [Content](#content). |
 | `requireSocialSpec` | boolean | `false` | The item or its feed must have a `socialspec` account whose host is the author feed's host. See [Authorship](#authorship). |
 | `allowEdit` | boolean | `false` | Re-sending the webmention updates the republished item. |
 | `allowDelete` | boolean | `false` | Re-sending it after the item was removed from the author feed (or the feed answers 404/410) deletes the republished item. |
@@ -129,9 +129,10 @@ A missing rule has the default value from the table below. Clients and servers m
 
 ## Content
 
-The content of a submission must be **Comment HTML**, defined in [RFC-5](https://github.com/bigwide-net/RFCs/blob/main/RFC-5-Comment-HTML.md). In short:
+The content of a submission must be **Comment Markdown** or **Comment HTML**, defined in [RFC-5](https://github.com/bigwide-net/RFCs/blob/main/RFC-5-Comment-HTML.md). In short:
 
-- Comment HTML is a small, strict subset of HTML. Paragraphs and line breaks are always allowed; the `allow*` rules above switch on optional features such as links, code, quotes or lists.
+- Comment Markdown is CommonMark with tables and strikethrough, and without raw HTML. Comment HTML is a small, strict subset of HTML, and what Comment Markdown renders to.
+- Paragraphs and line breaks are always allowed; the `allow*` rules above switch on optional features such as links, code, quotes or lists. Each feature covers both the HTML elements and the Markdown syntax that produces them.
 - Markdown (`source:markdown`, `_source.markdown`) is preferred over HTML, and plain text is the fallback.
 - A submission that breaks a rule is rejected with a reason, not repaired. The client is responsible for keeping the author within the rules: it offers only the enabled features and enforces the limits.
 - RFC-5 also defines how `minLength` and `maxLength` are measured, and how the server normalizes the HTML it republishes.

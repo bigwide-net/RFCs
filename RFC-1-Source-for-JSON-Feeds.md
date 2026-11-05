@@ -6,9 +6,9 @@ Latest version on GitHub: [RFC-1-Source-for-JSON-Feeds.md](https://github.com/bi
 
 ## Summary
 
-This proposal adds five fields from the RSS [source namespace](https://source.scripting.com/) to JSON Feed: who a post replies to, where its comments are, how many comments it has, the author's accounts on other services, and, for comments, the text as Markdown. They live in one extension object, `_source`, so a reader can treat a JSON feed exactly like an RSS feed that uses the namespace.
+This proposal adds five fields from the RSS [source namespace](https://source.scripting.com/) to JSON Feed: who a post replies to, where its comments are, how many comments it has, the author's accounts on other services, and the text as Markdown, mainly for comments. They live in one extension object, `_source`, so a reader can treat a JSON feed exactly like an RSS feed that uses the namespace.
 
-It also adds one thing the namespace lacks today: a **total** comment count next to the number of direct replies. rss.chat shows only the first-level count, so a thread with 2 replies and 30 answers to them looks quiet.
+It also adds one thing the namespace lacks today: a **total** comment count next to the number of direct replies. The namespace only has the first-level count, so a reader that wants to show the size of the whole thread, as Facebook does, has no way to get it.
 
 **Why now.** Social-RSS systems like rss.chat already link posts, replies and comment feeds with `source:inReplyTo`, `source:comments`, `source:account` and `source:markdown`. JSON Feed has no fields for any of this, so a blog that publishes JSON Feed drops out of those conversations. Mirroring the RSS elements one to one keeps a single model for both formats: publishers can generate both from the same data, and readers can use one code path.
 
@@ -22,7 +22,7 @@ Everything goes into one object named `_source`, following JSON Feed's [extensio
 }
 ```
 
-- It may appear on an **item** (`inReplyTo`, `comments`, `accounts`, and in comment feeds `markdown`) and on the **feed** itself (`accounts`).
+- It may appear on an **item** (`inReplyTo`, `comments`, `accounts`, `markdown`) and on the **feed** itself (`accounts`).
 - `about` should be `https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md`, this document. **This is not its final location**: the URL will change once the spec has a permanent home. Readers must therefore **ignore the value of `about`**: they recognize the extension by the name `_source` alone, and read its fields whatever `about` says, or when it is missing.
 - Every field is optional. A reader ignores fields it doesn't know and values of the wrong type, so the object can grow later.
 
@@ -83,13 +83,13 @@ Readers show it as "In reply to …": a link for a permalink, plain text for an 
 }
 ```
 
-**Why both counts.** A reader shows `count` on the button that opens the comments, because that is what the feed it loads contains. `total` answers "is anything going on here?": with only the first level, a post with 2 replies that drew 29 answers looks like a quiet one. Publishers that only know one number give `count`; a publisher with flat comments (WordPress without threading) has `count` = `total` and may omit `total`.
+**Why both counts.** Readers show reply counts in different styles. Some show only the direct replies, as Twitter/X does; others show all replies in the thread, as Facebook does. Which style to support is the reader's choice, so the feed gives both numbers and leaves it to the reader. Publishers that only know one number give `count`; a publisher with flat comments (WordPress without threading) has `count` = `total` and may omit `total`.
 
 Replies are posts too, so an item in a comment feed carries its own `comments` for the next level. Counts are a snapshot: readers should not expect them to update with every new comment, and should treat them as a hint, not a promise of what the feed holds.
 
-## Comment item: `markdown`
+## Item: `markdown`
 
-`markdown` holds a comment's text as Markdown, like `<source:markdown>` in RSS. It is meant for comment feeds only: the items of a feed that a `comments.feedUrl` points to.
+`markdown` holds an item's text as Markdown, like `<source:markdown>` in RSS. It is meant primarily for comment feeds, the items of a feed that a `comments.feedUrl` points to, but publishers may use it on posts as well.
 
 ```json
 {
@@ -106,8 +106,8 @@ Replies are posts too, so an item in a comment feed carries its own `comments` f
 ```
 
 - Publishers still write `content_html` or `content_text` (JSON Feed requires one), with the same text, for readers that don't know `markdown`.
-- Readers showing a comment prefer `markdown` over `content_html` and `content_text`, as they prefer `<source:markdown>` over `<description>` in RSS. Markdown is easier to render safely: a reader can build the comment from it without trusting the publisher's HTML.
-- On items of regular feeds (posts), readers ignore it. A post's body stays `content_html`.
+- Readers showing an item prefer `markdown` over `content_html` and `content_text`, as they prefer `<source:markdown>` over `<description>` in RSS. Markdown is easier to render safely: a reader can build the item from it without trusting the publisher's HTML.
+- A reader that shows posts as full web pages may keep using `content_html` for posts, since they often use HTML that Markdown can't express.
 
 ## Feed and item: `accounts`
 
@@ -169,7 +169,7 @@ Each field has an RSS counterpart, so a publisher can write both formats from th
 | `comments.feedUrl` | `<source:comments feedUrl>` | `<wfw:commentRss>` | `<link rel="replies" type="application/atom+xml">` |
 | `comments.count` | `<source:comments count>` | `<slash:comments>` | `thr:count` on that `replies` link |
 | `comments.total` | none yet (see open questions) | — | `<thr:total>` |
-| `markdown` (comment items) | `<source:markdown>` | — | — |
+| `markdown` (items, mainly comments) | `<source:markdown>` | — | — |
 | feed `accounts` | `<source:account service>` on the channel | — | — |
 | item `accounts` | `<source:account service>` on the item | — | — |
 
@@ -182,8 +182,9 @@ When a feed carries both the source elements and an older form, the source eleme
 **Publishers**
 
 - Use absolute `http(s)` URLs. Write `_source` only when it has at least one field.
-- If you also publish RSS, write the same values there: `inReplyTo`, `comments`, `accounts` and a comment's `markdown` should never disagree between your two feeds.
+- If you also publish RSS, write the same values there: `inReplyTo`, `comments`, `accounts` and `markdown` should never disagree between your two feeds.
 - A comment feed may be RSS, Atom or JSON Feed; readers should handle all three.
+- Serve comment feeds with `Access-Control-Allow-Origin: *`, so that every web client can read them. Comments are made to be handled client-side, without a server in between: an active thread can change any minute, and a server that polls feeds is too slow to keep up.
 
 **Readers**
 
@@ -191,7 +192,7 @@ When a feed carries both the source elements and an older form, the source eleme
 - An invalid `inReplyTo.feedUrl` or an empty `feedTitle` is dropped on its own; the reply itself stays.
 - To find an item author's accounts, check the item's `accounts` first and fall back to the feed's.
 - If `count` promises comments but `feedUrl` returns an empty feed or an error, say so instead of showing "no comments".
-- Comment feeds often live on other sites and send no CORS headers, so browser-based readers need a fallback (a proxy).
+- Not every publisher sends CORS headers yet, so browser-based readers still need a fallback (a proxy) for comment feeds without them.
 
 ## Full example
 
