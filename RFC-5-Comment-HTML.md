@@ -6,25 +6,30 @@ Latest version on GitHub: [RFC-5-Comment-HTML.md](https://github.com/bigwide-net
 
 ## Summary
 
-This proposal defines **Comment HTML**: the HTML that a comment, a reply or a post in a discussion group may contain when one feed submits it to another. It is a small, strict subset of [Feed HTML (RFC-2)](https://github.com/bigwide-net/RFCs/blob/main/RFC-2-HTML-Subset-for-Feed-Content.md). A base that every server accepts (paragraphs and line breaks) is extended by eight optional **features** — style, links, code, quotes, images, tables, lists and headlines — which each group switches on or off.
+This proposal defines **Comment HTML**: the HTML that a comment, a reply or a post in a discussion group may contain when one feed submits it to another. It is a small, strict subset of HTML. A base that every server accepts (paragraphs and line breaks) is extended by eight optional **features** — style, links, code, quotes, images, tables, lists and headlines — which each server switches on or off.
 
 It has three audiences:
 
 - **Clients** that write comments: produce Comment HTML, and only use the features the target allows.
-- **Servers** that accept submissions, such as a [Feed Submissions (RFC-4)](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) group server: check submissions against the subset and republish them in normalized form.
-- **Readers**: anything that renders Feed HTML renders Comment HTML.
+- **Servers** that accept submissions, such as a [Feed Submissions (RFC-4)](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) server for a blog or a discussion group: check submissions against the subset and republish them in normalized form.
+- **Readers**: Comment HTML is ordinary HTML. Any reader that shows HTML content shows Comment HTML.
 
 [rssmention](https://github.com/bigwide-net/rssmention) implements it.
 
-**Why now.** Feed HTML describes what a blog post may contain, and a reader *sanitizes* towards it: what doesn't fit is dropped, and the post is shown anyway. That is right for a post that the author has already published on their own site. It is wrong for a comment that a server republishes under its own name, next to other people's comments. Moderators need to know what they are approving, other readers need comments that look alike, and the author needs to know that what they wrote is what gets shown. Comments also have different needs: nobody embeds a video in a reply, but a code snippet or a quote is common. So a comment server *rejects* what doesn't fit, and tells the author why, instead of quietly changing it.
+**Why now.** [rssmention](https://github.com/bigwide-net/rssmention) and [Big Wide](https://bigwide.net) open up a future of interoperable clients and forum software: a comment written in one app can be posted to a blog or a discussion group that runs on someone else's software. For that to work, client and server need rules that are more specific than "HTML is allowed", because no server can accept any HTML in a comment. Every forum and comment system has its own rules today, and none of them tells the client what they are.
+
+When the client doesn't know what the server expects, the author finds out the hard way: the comment is rejected, or it shows up without the table, the link or the formatting they wrote. Defining the server's expectations, and announcing them to the client, avoids that frustration.
+
+The needs of communities also differ. Some fight spam and allow no links at all. Some host complex discussions and want code, quotes and tables. Some want nothing but short, plain comments. Comment HTML gives them a common language to state their rules, so that any client can write comments for any server.
 
 ## Principles
 
 1. **Reject, don't repair.** A submission that breaks a rule is rejected with a reason. The server never drops an element, closes a tag or guesses what was meant, so the author sees exactly what will be published. The one exception is attributes: unknown attributes are removed, because they never change what the reader sees.
-2. **Small and closed.** Every element is listed here. There is no "everything else is kept as text": unknown elements are an error.
-3. **Text first.** Comments are text. Markdown is the preferred input; HTML is the fallback, plain text the fallback after that.
-4. **Groups decide.** Each feature is a switch. A group about programming turns on code; a group for photographers turns on images.
-5. **A subset of Feed HTML.** Every valid comment is valid Feed HTML, so readers need nothing new.
+2. **The client keeps the author within the rules.** Rejection is the server's last line of defense, not the way authors learn the rules. The client is responsible for preventing the user from breaking them: it must not offer features that the server doesn't support (no table button if tables are off), and it must enforce the limits (length, link text, URLs) before the comment is published.
+3. **Small and closed.** Every element is listed here. There is no "everything else is kept as text": unknown elements are an error.
+4. **Text first.** Comments are text. Markdown is the preferred input; HTML is the fallback, plain text the fallback after that.
+5. **Servers decide.** Each feature is a switch. A group about programming turns on code; a group for photographers turns on images; a blog that fights spam turns off links.
+6. **Plain HTML.** Every valid comment is ordinary HTML, so readers need nothing new.
 
 ## Elements
 
@@ -41,7 +46,7 @@ Text without any element is also valid. A comment must contain some text or, if 
 
 | Feature | Elements | Requirements |
 | --- | --- | --- |
-| `allowStyle` | `strong`, `em` | |
+| `allowStyle` | `strong`, `em`, `s` | |
 | `allowLinks` | `a` | `href` is required, see [URLs](#urls). Links must not be nested. |
 | `allowCode` | `code`, `pre` | |
 | `allowQuote` | `q`, `blockquote` | |
@@ -56,9 +61,11 @@ There is one more feature that adds no element:
 | --- | --- |
 | `urlAutoLinking` | The server turns bare `http(s)` URLs in the text into links after checking the comment, except inside `a`, `code` and `pre`. It works even when `allowLinks` is off: the author can't choose the link text, but a URL in a comment is still clickable. |
 
-Any element that is not in the base and not allowed by an enabled feature makes the submission invalid. This includes the elements that Feed HTML allows but Comment HTML doesn't, such as `b`, `i`, `s`, `del`, `hr`, `div`, `span`, `figure`, `iframe` and `video`.
+Any element that is not in the base and not allowed by an enabled feature makes the submission invalid. This includes common elements such as `b`, `i`, `u`, `del`, `hr`, `div`, `span`, `figure`, `iframe` and `video`.
 
 **Announcing the features.** A server tells clients which features are on. With RFC-4, they are the boolean rules of the same name in `<rm:policies>` / `_submissions.policies`, separately for posts and comments. Other systems may announce them differently, but should use the same names. A missing feature is off.
+
+A client must not offer a feature that is off, and must not send its elements.
 
 ### Attributes
 
@@ -109,18 +116,19 @@ Short link texts keep comments readable and make it harder to disguise where a l
 
 A submission can carry its content in three forms. The server uses the first that is present:
 
-1. **Markdown** (`<source:markdown>` in RSS, `_source.markdown` in JSON Feed, see [RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md)). It is rendered as [CommonMark](https://commonmark.org/) with tables, and the result must be valid Comment HTML. The HTML version of the item is then ignored.
+1. **Markdown** (`<source:markdown>` in RSS, `_source.markdown` in JSON Feed, see [RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md)). It is rendered as [CommonMark](https://commonmark.org/) with tables and strikethrough, and the result must be valid Comment HTML. The HTML version of the item is then ignored.
 2. **HTML** (`<content:encoded>` or `<description>` in RSS, `content_html` in JSON Feed).
 3. **Plain text** (`content_text` in JSON Feed). Blank lines separate paragraphs (`<p>`), single newlines become `<br>`, and `&`, `<`, `>` and `"` are escaped.
 
 Markdown rules:
 
 - **Raw HTML is text.** `<b>` in Markdown is shown as `<b>`, not interpreted. Markdown can therefore only produce the elements its syntax maps to.
-- **The features still apply.** `# Title` produces `h1` and needs `allowHeadlines`; `- item` needs `allowLists`; `![x](…)` needs `allowImages`; `` `x` `` needs `allowCode`; `> x` needs `allowQuote`; `*x*` and `**x**` need `allowStyle`; `[x](…)` needs `allowLinks`. A Markdown comment that uses a feature the group has off is rejected.
-- **Not available:** thematic breaks (`---` produces `hr`, so the comment is rejected), strikethrough (`~~x~~` stays as literal text), and bare-URL autolinking by the Markdown renderer. Use `urlAutoLinking` for URLs.
+- **The features still apply.** `# Title` produces `h1` and needs `allowHeadlines`; `- item` needs `allowLists`; `![x](…)` needs `allowImages`; `` `x` `` needs `allowCode`; `> x` needs `allowQuote`; `*x*`, `**x**` and `~~x~~` need `allowStyle`; `[x](…)` needs `allowLinks`. A Markdown comment that uses a feature that is off is rejected.
+- **Strikethrough** (`~~x~~`) produces `s`.
+- **Not available:** thematic breaks (`---` produces `hr`, so the comment is rejected) and bare-URL autolinking by the Markdown renderer. Use `urlAutoLinking` for URLs.
 - Attributes that renderers add (`class="language-js"` on code, `style="text-align: right"` on table cells, `start` on ordered lists) are removed like any other attribute.
 
-**Length.** A group sets two limits (RFC-4's `minLength` and `maxLength`), measured differently:
+**Length.** A server sets two limits (RFC-4's `minLength` and `maxLength`), measured differently:
 
 - `maxLength` counts the characters of the form that was submitted: the Markdown if there is Markdown, the HTML otherwise, the text otherwise. Authors writing Markdown don't pay for the markup that rendering adds.
 - `minLength` counts the **visible text** of the rendered comment: the text between the tags, with entities decoded and runs of whitespace collapsed to one space, trimmed. Block elements (`p`, `li`, `td`, headings, …) and `br` separate words like a space; inline elements (`strong`, `em`, `a`, `code`, `q`) don't. Markup never counts, so `<p><strong>Thanks!</strong></p>` has 7 characters. An image has no text: a comment that is only an image needs a `minLength` of 0.
@@ -129,29 +137,15 @@ rssmention uses a `minLength` of 10 by default, which keeps out "+1" and "Thanks
 
 ## Titles
 
-A title is plain text, never HTML. The server collapses runs of whitespace to one space, trims it, and rejects titles longer than 200 characters. Whether a title is required, allowed or forbidden is a group rule (RFC-4's `title`); comments usually have none.
-
-## Comment HTML and Feed HTML
-
-| | Feed HTML (RFC-2) | Comment HTML |
-| --- | --- | --- |
-| Applies to | Posts in a feed the author publishes | Content that a server republishes for someone else |
-| Unknown elements | Removed, content kept | Submission rejected |
-| Broken markup | Repaired by the HTML parser | Submission rejected |
-| Elements | About 70 | 25, most of them behind a feature |
-| Attributes | Many, plus a CSS subset | `a@href`, `img@src`, `img@alt` only |
-| URLs | `http(s)`, `mailto`, small `data:` images, relative | Absolute `http(s)` only |
-| Embeds, media, CSS | Yes | No |
-
-Every valid comment is valid Feed HTML. A server that republishes comments in a feed therefore needs no extra rules in the reader.
+A title is plain text, never HTML. The server collapses runs of whitespace to one space, trims it, and rejects titles longer than 200 characters. Whether a title is required, allowed or forbidden is a server rule (RFC-4's `title`); comments usually have none.
 
 ## Notes for clients and servers
 
 **Clients**
 
-- Read the group's features before the author starts writing, and offer only those: no table button in a group without tables.
+- Read the server's features before the author starts writing, and offer only those: no table button if tables are off.
 - Prefer sending Markdown, and also write HTML for readers of the author feed. Generate both from the same text.
-- Validate locally with the same rules, and show the author the problem before publishing. A rejected comment that is already in the author's feed is awkward to take back.
+- Enforce the limits in the editor: length, link text, URLs, title. Show the problem before publishing; a rejected comment that is already in the author's feed is awkward to take back.
 - Always close tags and quote attributes. Most HTML serializers do; HTML copied from a web page often doesn't.
 
 **Servers**
@@ -163,7 +157,7 @@ Every valid comment is valid Feed HTML. A server that republishes comments in a 
 
 ## Examples
 
-A valid comment in a group with `allowStyle`, `allowLinks` and `allowCode`:
+A valid comment on a server with `allowStyle`, `allowLinks` and `allowCode`:
 
 ```html
 <p>Works for me with <code>curl -I</code>.</p>
@@ -187,7 +181,7 @@ Submissions that are rejected, with the reason:
 | `<p>Read <a href="/about">this</a></p>` | Relative URL. |
 | `<ul>Things<li>one</li></ul>` | Text directly inside `ul`. |
 | `<p>A<br/>B</p><div/>` | `div` is not in the subset, and only void elements may be self-closing. |
-| `<h2>Update</h2>` in a group without `allowHeadlines` | Headline feature is off. |
+| `<h2>Update</h2>` without `allowHeadlines` | Headline feature is off. |
 
 What the server republishes for a valid comment that is not yet normalized, with `urlAutoLinking` on:
 
@@ -201,9 +195,8 @@ What the server republishes for a valid comment that is not yet normalized, with
 
 ## Open questions
 
-- **Strikethrough.** `s` or `del` is common in comments ("~~wrong~~ right"). Should it be part of `allowStyle`?
-- **More of Feed HTML.** `hr`, `sup`/`sub`, `kbd`, `ol start` and `figure`/`figcaption` are harmless. Which are worth adding, and behind which feature?
+- **More elements.** `hr`, `sup`/`sub`, `kbd`, `ol start` and `figure`/`figcaption` are harmless. Which are worth adding, and behind which feature?
 - **Image size.** Without `width` and `height`, readers can't reserve space for images. Should `img` keep them, or should servers fetch the image and add them?
-- **`mailto:` links.** Feed HTML allows them. In comments they invite address harvesting, but have legitimate uses.
+- **`mailto:` links.** In comments they invite address harvesting, but have legitimate uses.
 - **Feature names.** The names come from rssmention's configuration. A version or a single list of enabled features (`"features": ["style", "links"]`) might be simpler for other implementations.
 - **Repairing instead of rejecting.** Some clients can't control their HTML (a blog engine that writes `<p>` without closing it). Should servers be allowed to accept HTML that a standard HTML parser repairs unambiguously, as long as they republish the normalized result?
