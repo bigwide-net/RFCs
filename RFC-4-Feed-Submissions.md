@@ -20,7 +20,7 @@ Everything else comes from existing specs. Replies, comment feeds, counts, Markd
 
 [rssmention](https://github.com/bigwide-net/rssmention) is the reference implementation.
 
-**Why now.** [rss.chat](https://rss.chat) shows that a feed post can carry a conversation: readers browse the comments on a post and reply to them, linked with `source:inReplyTo` and `source:comments`. But the current implementation relies on a central server, and users must register on that server before they can write a comment. This proposal allows commenting without registering anywhere. The author only needs to prove that they own their domain, and they do that by publishing the comment on it. Their feed is their identity, and webmention is how the comment reaches the post. What is missing is a way for a client to learn, from the target feed alone, where to submit and which rules apply. Without it, a client fails at the first comment that is too long or uses a link where links are not allowed, and the author learns why only from an error message.
+**Why now.** [rss.chat](https://rss.chat) shows that a feed post can carry a conversation: readers browse the comments on a post and reply to them, linked with `source:inReplyTo` and `source:comments`. But the current implementation relies on a central server, and users must register on that server before they can write a comment. This proposal allows commenting without registering anywhere. The author only needs to prove that they own their domain, and they do that by publishing the comment on it. Their domain is their identity, as established by [socialspec.org](https://socialspec.org); their feed is where they publish, and webmention is how the comment reaches the post. What is missing is a way for a client to learn, from the target feed alone, where to submit and which rules apply. Without it, a client fails at the first comment that is too long or uses a link where links are not allowed, and the author learns why only from an error message.
 
 ## Roles
 
@@ -197,7 +197,7 @@ Posts and comments are referenced by **the feed that contains them plus `#guid`*
 
 Anyone can send a webmention for any feed. To show that the author controls the source, an item or its feed carries a `socialspec` account (`<source:account service="socialspec">@alice.example.com</source:account>`, `_source.accounts.socialspec`). When `requireSocialSpec` is set, its host must be the author feed's host name, `alice.example.com` for `https://alice.example.com/feed.xml`. Without `requireSocialSpec`, the server republishes the account only if it matches and leaves it out otherwise, so a feed never shows an unverified account.
 
-**Every author needs their own domain or subdomain.** Shared hosts, where many users publish under one host name, can't prove authorship this way. This is deliberate: it is what allows servers not to identify users any further. Whoever gave the author a domain or subdomain has already identified them, and the server doesn't need to repeat that with accounts, passwords or e-mail addresses.
+**Every author needs their own domain or subdomain.** As in [socialspec.org](https://socialspec.org), the domain is the author's identity. Shared hosts, where many users publish under one host name, can't prove authorship this way. This is deliberate: it is what allows servers not to identify users any further. Whoever gave the author a domain or subdomain has already identified them, and the server doesn't need to repeat that with accounts, passwords or e-mail addresses.
 
 ### What is republished
 
