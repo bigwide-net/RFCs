@@ -6,7 +6,7 @@ Latest version on GitHub: [RFC-4-Feed-Submissions.md](https://github.com/bigwide
 
 ## Summary
 
-This proposal lets a feed accept comments, and optionally posts, from other feeds. The author first publishes the comment in their own RSS or JSON feed, then sends a [Webmention](https://www.w3.org/TR/webmention/) to the target. The server checks it and republishes it in a comment feed. It works for two kinds of targets:
+This proposal lets a feed accept comments, and optionally posts, from other feeds. The author first publishes the comment in an RSS or JSON feed on their own domain, then sends a [Webmention](https://www.w3.org/TR/webmention/) to the target. The server checks it and republishes it in a comment feed. It works for two kinds of targets:
 
 - **A blog or any other feed with posts**: readers comment on its posts, and reply to each other's comments. The feed accepts comments only.
 - **A discussion group**, like a subreddit or a Facebook group: the group feed accepts new posts as well as comments. Anyone can start a thread.
@@ -26,7 +26,7 @@ Everything else comes from existing specs. Replies, comment feeds, counts, Markd
 
 - **Server**: receives webmentions for one or more feeds, checks them and republishes accepted items in comment feeds. For a blog it hosts only the comments, and the blog itself can live anywhere. For a discussion group it also publishes the group feed with the posts.
 - **Target feed**: a feed that announces `submissions`: a blog's feed, or a group feed.
-- **Author feed**: an RSS or JSON feed that the author controls. It contains the item to submit.
+- **Author feed**: an RSS or JSON feed on the author's domain that contains the item to submit. It doesn't have to be the author's main public feed, and usually isn't: it is typically a feed only for commenting. A client may even create one feed per site the author comments on, or one per comment.
 - **Client**: the software that writes the item into the author feed and sends the webmention. It can be a blog engine, a feed-based social app or a script.
 - **Reader**: any feed reader. It shows target and comment feeds like other feeds; the extensions in this proposal only matter to it if it offers a "reply" button.
 
@@ -175,6 +175,8 @@ source=https%3A%2F%2Fbob.example.net%2Ffeed.xml%23c-17&target=https%3A%2F%2Frm.e
 ### Author feeds
 
 Author feeds are **RSS 2.0 or JSON Feed**. Atom is not supported: two formats are enough. RSS because it is by far the most widespread, JSON Feed because it is the easiest to produce and to parse.
+
+An author feed only needs to be on the author's domain (see [Authorship](#authorship)). It can be a feed that exists just for commenting, one per site or one per comment, and doesn't need to be listed or linked anywhere. The server reads it when it receives the webmention, and again when the author re-sends the webmention to edit or delete the item, so it should stay available as long as the author may want to do that.
 
 ### Source
 
