@@ -18,7 +18,7 @@ The proposal adds two things to RSS (namespace `https://rssmention.bigwide.net/`
 
 Everything else comes from existing specs. Replies, comment feeds, counts, Markdown and accounts use the [source namespace](https://source.scripting.com/) in RSS and [RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md) in JSON Feed. The allowed HTML is [Comment HTML (RFC-5)](https://github.com/bigwide-net/RFCs/blob/main/RFC-5-Comment-HTML.md). Sending a submission is a plain webmention.
 
-[rssmention](https://github.com/bigwide-net/rssmention) is the reference implementation.
+[rssmention](https://github.com/bigwide-net/rssmention) is the reference implementation. It supports only `republish: full`.
 
 **Why now.** [rss.chat](https://rss.chat) shows that a feed post can carry a conversation: readers browse the comments on a post and reply to them, linked with `source:inReplyTo` and `source:comments`. But the current implementation relies on a central server, and users must register on that server before they can write a comment. This proposal allows commenting without registering anywhere. The author only needs to prove that they own their domain, and they do that by publishing the comment on it. Their domain is their identity, as established by [socialspec.org](https://socialspec.org); their feed is where they publish, and webmention is how the comment reaches the post. What is missing is a way for a client to learn, from the target feed alone, where to submit and which rules apply. Without it, a client fails at the first comment that is too long or uses a link where links are not allowed, and the author learns why only from an error message, or from finding that the comment was not published at all, or was published with features missing.
 
@@ -53,7 +53,7 @@ Everything else comes from existing specs. Replies, comment feeds, counts, Markd
     <rm:tos>https://twowavesandadot.blog/discussion/tos.html</rm:tos>
     <rm:policies type="posts" minLength="10" maxLength="8000" title="required" allowLinks="true" … commentLimit="1000"/>
     <rm:policies type="comments" minLength="10" maxLength="4000" title="none" allowLinks="true" … commentLimit="20" maxDepth="5"/>
-    <rm:republish>true</rm:republish>
+    <rm:republish>full</rm:republish>
   </rm:submissions>
 </channel>
 </rss>
@@ -74,7 +74,7 @@ The namespace URI is `https://rssmention.bigwide.net/`. Readers should also acce
     "posts": { "minLength": 10, "maxLength": 8000, "title": "required", "allowLinks": true, "commentLimit": 1000 },
     "comments": { "minLength": 10, "maxLength": 4000, "title": "none", "allowLinks": true, "commentLimit": 20, "maxDepth": 5 }
   },
-  "republish": true
+  "republish": "full"
 }
 ```
 
@@ -86,7 +86,7 @@ The namespace URI is `https://rssmention.bigwide.net/`. Readers should also acce
 | JSON `_submissions` | RSS `rm:submissions` | Meaning |
 | --- | --- | --- |
 | `url` | `<rm:url>` | **Required.** The webmention endpoint for posts and comments. Absolute `http(s)` URL. |
-| `republish` | `<rm:republish>` | **Required.** Whether accepted submissions are published. See [Republishing](#republishing). |
+| `republish` | `<rm:republish>` | **Required.** How accepted submissions are published: `full`, `summary` or `no`. See [Republishing](#republishing). |
 | `tos` | `<rm:tos>` | The terms of service. Clients should show the link before the first submission. |
 | `policies.posts` | `<rm:policies type="posts">` | Rules for new posts. Missing: the feed accepts no posts. See [Policies](#policies). |
 | `policies.comments` | `<rm:policies type="comments">` | Rules for comments and replies to comments. Missing: the feed accepts no comments. |
@@ -99,10 +99,13 @@ The namespace URI is `https://rssmention.bigwide.net/`. Readers should also acce
 
 `republish` says what happens to an accepted submission:
 
-- **`true`**: the server publishes it in its feeds, next to the other comments, under the author's name.
-- **`false`**: the server only delivers it to the owner of the target feed, like an email to the author of a blog. Nothing is published, and there are no comment feeds. Some blogs prefer this: they want to hear from their readers without hosting a public discussion.
+- **`full`**: the server publishes the whole item in its feeds, next to the other comments, under the author's name.
+- **`summary`**: the server publishes only an abstract of the text, under the author's name, and links to the rest. The republished item must therefore have a link to the full text in the author feed (`link` in RSS, `url` in JSON Feed), and the server rejects submissions without one.
+- **`no`**: the server only delivers the submission to the owner of the target feed, like an email to the author of a blog. Nothing is published, and there are no comment feeds. Some blogs prefer this: they want to hear from their readers without hosting a public discussion.
 
-`republish` is also a statement to the client. When it is `true`, sending the webmention means that the author agrees to the item being republished. The interface makes the consequence of calling it explicit: a client must make clear to the author, before the first submission, that the comment will be published, and show the terms of service along with it.
+A reader that finds a value it doesn't know treats it like `no` and doesn't offer to submit.
+
+`republish` is also a statement to the client. When it is `full` or `summary`, sending the webmention means that the author agrees to the item, or its abstract, being republished. The interface makes the consequence of calling it explicit: a client must make clear to the author, before the first submission, that the comment will be published, and show the terms of service along with it.
 
 ## Policies
 
@@ -220,7 +223,7 @@ Content-Type: application/json
 | `status` | Other fields | Meaning |
 | --- | --- | --- |
 | `waiting` | | Not processed yet. Poll again after a few seconds. |
-| `success` | `pubDate`, `pubUrl` | Accepted. `pubUrl` is the containing feed + `#guid`; it is missing if `republish` is `false`. |
+| `success` | `pubDate`, `pubUrl` | Accepted. `pubUrl` is the containing feed + `#guid`; it is missing if `republish` is `no`. |
 | `deleted` | | The resubmission deleted the item. |
 | `failure` | `code`, `text` | Rejected. `text` is a human-readable reason to show the author. |
 
@@ -238,6 +241,7 @@ Status pages are short-lived: rssmention keeps them for at least an hour. Client
 | `title-required`, `title-not-allowed`, `title-too-long` | The `title` rule. |
 | `empty-content`, `too-short`, `too-long`, `malformed-html`, `forbidden-element`, `bad-nesting`, `missing-attribute`, `invalid-url`, `url-too-long`, `link-text-too-long`, `weird-formatting` | Content rules, see RFC-5. Servers may define more content codes. |
 | `comments-disabled`, `comment-limit`, `max-depth`, `target-gone` | The target no longer accepts the comment. |
+| `link-missing` | `republish` is `summary` and the item has no link to its full text. |
 | `edit-not-allowed` | The source was submitted before and `allowEdit` is not set. |
 | `moderation-rejected`, `moderation-unavailable` | The server's moderation rejected the item, or could not run. |
 
@@ -282,7 +286,7 @@ Fields used from RFC-1 and the source namespace:
 
 **Clients**
 
-- Read the rules before the author starts writing. Offer only the enabled features and enforce the limits in the editor (see RFC-5). Show the terms of service, and that the comment will be published if `republish` is `true`.
+- Read the rules before the author starts writing. Offer only the enabled features and enforce the limits in the editor (see RFC-5). Show the terms of service, and that the comment will be published, in full or as an abstract, if `republish` is `full` or `summary`.
 - Write `inReplyTo` exactly as the target, and keep the item in the author feed. If it drops out of the feed and the server allows deletes, the next webmention for it deletes the comment.
 - Poll the status page with a growing interval, and stop after a few minutes. A `waiting` status that never changes means the server restarted; resubmit.
 
@@ -301,7 +305,7 @@ Alice's blog feed `https://alice.example.com/feed.json` uses a comment server at
     "policies": {
       "comments": { "minLength": 2, "maxLength": 2000, "allowStyle": true, "urlAutoLinking": true, "title": "none", "requireSocialSpec": true }
     },
-    "republish": true
+    "republish": "full"
   },
   "items": [{
     "id": "post-42",
@@ -367,7 +371,7 @@ The group feed `https://rm.example.org/groups/twowaves/posts.json`, as rssmentio
         "allowEdit": false, "allowDelete": false, "commentLimit": 20, "maxDepth": 5
       }
     },
-    "republish": true
+    "republish": "full"
   },
   "_source": {
     "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
