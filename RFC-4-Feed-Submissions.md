@@ -161,6 +161,28 @@ It is used in both directions:
 
 `allowComments` must be a boolean in JSON and `true` or `false` in RSS. Readers ignore other values, and then use the default.
 
+## Reading in the client: CORS
+
+Discussions change fast. A group feed gets new posts and an active thread new comments within minutes, sometimes seconds. Many feed readers fetch feeds on a server and refresh them every 30 or 60 minutes. That works for blogs, but not for a conversation: by the time the reader shows a comment, the thread has moved on, and an author who replies can't see the answers to their own comment.
+
+Feeds that carry a discussion are therefore meant to be **fetched by the client itself**, typically in the browser, whenever the user opens or refreshes a thread. For that to work, these feeds **must** allow cross-origin reading with [CORS](https://fetch.spec.whatwg.org/#http-cors-protocol), for every origin:
+
+```
+Access-Control-Allow-Origin: *
+```
+
+This applies to:
+
+- **Target feeds**: a group feed, and a blog's feed that announces `submissions`. The client reads the rules and the posts from them.
+- **Comment feeds** and **archives** that the server publishes.
+- **The webmention endpoint and the status pages**, so that a browser-based client can submit and follow the result. The endpoint must also send `Access-Control-Expose-Headers: Location`, because the client needs the status page URL from `Location`. A form-encoded `POST` is a [simple request](https://fetch.spec.whatwg.org/#cors-safelisted-request-header) and needs no preflight; a server that accepts JSON bodies must also answer the `OPTIONS` preflight.
+
+Use `*`, not a list of known origins: any client on any site must be able to read the feeds. The feeds are public and the requests carry no credentials, so `*` exposes nothing that isn't already public.
+
+Feeds that are fetched often should be cheap to fetch. Servers should support conditional requests (`ETag` or `Last-Modified`) and keep caching times short, a few seconds to a minute, so that a client's refresh shows new comments right away.
+
+Author feeds are fetched by the server, not the client, and don't need CORS for this proposal.
+
 ## Submitting
 
 The client publishes the item in the author feed, then sends a webmention as the [Webmention spec](https://www.w3.org/TR/webmention/#sending-webmentions) describes: a `POST` to `url` with `source` and `target`, form-encoded. Servers should accept a JSON body with the same two fields as well.
@@ -286,11 +308,13 @@ Fields used from RFC-1 and the source namespace:
 - Treat the author feed as untrusted: fetch it with a size and time limit, refuse private network addresses, and never fetch your own URLs.
 - Process submissions one at a time per target feed, or lock, so that comment limits and counts stay correct.
 - Republished items carry `source:inReplyTo` (comments) and `source:comments` (posts and comments), so a reader can walk the thread without knowing this proposal.
+- Serve target feeds, comment feeds, archives, the endpoint and the status pages with `Access-Control-Allow-Origin: *`. See [Reading in the client: CORS](#reading-in-the-client-cors).
 
 **Clients**
 
 - Read the rules before the author starts writing. Offer only the enabled features and enforce the limits in the editor (see RFC-5). Show the terms of service, and that the comment will be published, in full or as an abstract, if `republish` is `full` or `summary`.
 - Write `inReplyTo` exactly as the target, and keep the item in the author feed. If it drops out of the feed and the server allows deletes, the next webmention for it deletes the comment.
+- Fetch target and comment feeds directly, when the user opens or refreshes a thread, not through a server-side feed reader that refreshes them every hour.
 - Poll the status page with a growing interval, and stop after a few minutes. A `waiting` status that never changes means the server restarted; resubmit.
 
 ## Example: comments on a blog
