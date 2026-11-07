@@ -140,7 +140,7 @@ A title is plain text, never HTML. The server collapses runs of whitespace to on
 | Broken markup | Repaired by the HTML parser | Submission rejected |
 | Elements | About 70 | 25, most of them behind a feature |
 | Attributes | Many, plus a CSS subset | `a@href`, `img@src`, `img@alt` only |
-| URLs | `http(s)`, `mailto`, small `data:` images, relative | Absolute `http(s)` only |
+| URLs | `http(s)`, `mailto`, `tel`, small `data:` images, relative | Absolute `http(s)` only |
 | Embeds, media, CSS | Yes | No |
 
 Every valid comment is valid Feed HTML. A server that republishes comments in a feed therefore needs no extra rules in the reader.

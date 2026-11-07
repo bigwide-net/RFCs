@@ -139,7 +139,7 @@ Readers drop a declaration whose value breaks one of these rules; the rest of th
 
 | Where | Allowed schemes |
 | --- | --- |
-| `a href` | `http`, `https`, `mailto` |
+| `a href` | `http`, `https`, `mailto`, `tel` |
 | `img src`, `img srcset` | `http`, `https`, `data` (images only: `data:image/…`, under 50,000 characters) |
 | `source`, `audio`, `video`, `track`, `iframe` | `http`, `https` |
 | `blockquote cite`, `q cite` | `http`, `https` |
