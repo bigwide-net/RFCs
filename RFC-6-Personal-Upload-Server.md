@@ -86,7 +86,7 @@ The app fetches `https://tim.example.com/.well-known/host-meta.json` ([RFC 6415]
 - Only the JSON form is used. Apps never request or parse the XML `host-meta`, and servers need not serve it.
 - The link relation is a URI, so it needs no IANA registration. **`https://bigwide.net/ns/personal-storage` is a placeholder** until the relation has a permanent home.
 - `host-meta.json` must be served on the owner's domain itself. The configuration document and all endpoints may live on another host, e.g. `storage.tim.example.com` or `id.tim.example.com`.
-- Other links in the file are not PUPS's business; apps ignore them. PUPS itself may add links on behalf of apps (see [Registering links](#registering-links-in-host-metajson)).
+- Other links in the file are not PUPS's business; apps ignore them. PUPS itself may add links and properties on behalf of apps (see [Editing host-meta.json](#editing-host-metajson)).
 
 ### Configuration document
 
@@ -104,10 +104,10 @@ The `href` points to the configuration document. Its path is chosen by the serve
   "well_known_paths": [
     { "path": "/feeds/bigwide/", "rels": ["https://bigwide.net/ns/feed"] },
     { "path": "/.well-known/following.opml", "url": "https://tim.example.com/.well-known/following.opml" },
-    { "path": "/.well-known/about.md", "url": "https://tim.example.com/.well-known/about.md" },
+    { "path": "/.well-known/about.md", "url": "https://tim.example.com/.well-known/about.md", "properties": ["https://bigwide.net/ns/name"] },
     { "path": "/.well-known/contact.vcf", "url": "https://tim.example.com/.well-known/contact.vcf" }
   ],
-  "links_endpoint": "https://tim.example.com/pups/links",
+  "host_meta_endpoint": "https://tim.example.com/pups/host-meta",
   "max_upload_bytes": 26214400,
   "spec_version": "0.1"
 }
@@ -121,7 +121,7 @@ The `href` points to the configuration document. Its path is chosen by the serve
 | `public_base` | **Required.** The base URL where the same files are read publicly. It may differ from `storage_base`, e.g. a CDN. Ends with `/`. See [Public URLs](#public-urls). |
 | `scopes_supported` | **Required.** `identify` and the scope prefix `write:/appdata/`. Well-known scopes follow from `well_known_paths`. |
 | `well_known_paths` | The files and directories outside `/appdata/` that apps may ask for. See [Well-known paths](#well-known-paths). Missing: none. |
-| `links_endpoint` | Where apps register links in `host-meta.json`. Missing: the server cannot write `host-meta.json`. |
+| `host_meta_endpoint` | Where apps add links to and set properties in `host-meta.json`. Missing: the server cannot write `host-meta.json`. |
 | `post_endpoint` | Present only if the server cannot accept `PUT` and `DELETE`. Clients must then send all writes there. See [POST fallback](#post-fallback). |
 | `max_upload_bytes` | **Required.** The largest file the server accepts, in bytes. |
 | `spec_version` | **Required.** The version of this proposal the server implements: `0.1`. |
@@ -255,6 +255,7 @@ Each entry is an object:
 | `path` | **Required.** The scope path. Ends with `/` for a directory. |
 | `url` | The public URL of the file or directory. Default: `public_base` + `path` without its leading `/`. Needed for files that must live outside `public_base`, e.g. at the domain root. |
 | `rels` | The link relations apps may register in `host-meta.json` for files under this path. Default: none. |
+| `properties` | The top-level `host-meta.json` properties apps with this scope may set. Default: none. |
 
 Rules:
 
@@ -427,7 +428,7 @@ How uploaded files are served is the second half of the protection. Every upload
 
 Browser apps are first-class clients, and missing CORS headers are the most common failure in practice, so CORS is part of conformance.
 
-- **CORS-enabled**: `host-meta.json`, the configuration document, the RFC 8414 metadata, the token and revocation endpoints, the upload API, `post_endpoint`, `links_endpoint`, and all uploaded files.
+- **CORS-enabled**: `host-meta.json`, the configuration document, the RFC 8414 metadata, the token and revocation endpoints, the upload API, `post_endpoint`, `host_meta_endpoint`, and all uploaded files.
 - **Preflight**: `OPTIONS` → `204` with `Access-Control-Allow-Origin: *`, `Access-Control-Allow-Methods: GET, HEAD, PUT, DELETE, POST, OPTIONS`, `Access-Control-Allow-Headers: Authorization, Content-Type, If-Match, If-None-Match`, `Access-Control-Max-Age: 86400`.
 - **Every response**, errors included, carries `Access-Control-Allow-Origin: *` and `Access-Control-Expose-Headers: ETag, Location, WWW-Authenticate`.
 - **Not CORS-enabled**: the authorization endpoint and all owner pages (login, setup, apps).
@@ -458,39 +459,50 @@ Every successful authorization proves that the person controls the domain: only 
 - **The owner login becomes more valuable.** A compromised owner login means impersonation everywhere, not just file tampering. Domains that also run web applications should use an auth subdomain (see [Deployment modes](#deployment-modes)).
 - **Privacy.** Apps learn the owner's domain, which is often the person's real name. That is the purpose, and the consent screen says so.
 
-## Registering links in host-meta.json
+## Editing host-meta.json
 
-`host-meta.json` is the domain's index. An app that publishes, say, a bigwide.net feed may want the feed to be discoverable from the domain. Apps can't write `/.well-known/host-meta.json` themselves (it is never a declared well-known file), so PUPS edits it for them.
+`host-meta.json` is the domain's index. An app that publishes, say, a bigwide.net feed may want the feed to be discoverable from the domain, through a link or a top-level property. Apps can't write `/.well-known/host-meta.json` themselves (it is never a declared well-known file), so PUPS edits it for them, through `host_meta_endpoint`.
 
-**The file is the source of truth.** PUPS keeps no separate link registry. The owner or their CMS may edit the file at any time, and PUPS never overwrites their entries.
+**The file is the source of truth.** PUPS keeps no separate registry. The owner or their CMS may edit the file at any time, and PUPS never changes the owner's links. Properties are shared (see below).
 
-- **Ownership marker.** Every link PUPS adds carries `"properties": {"https://bigwide.net/ns/pups#client": "<client_id>"}`. Links without it belong to the owner and are never changed or removed by PUPS.
-- **Read-modify-write.** PUPS reads the file, changes only the requesting app's links, and writes it back conditionally (e.g. with an ETag condition, or a lock, a hash check and an atomic rename). If the file changed in between, it rereads and retries.
-- **Everything else is preserved**: other links, `subject`, `aliases` and top-level `properties`. If the file is not valid JSON, PUPS refuses with `409` and writes nothing. If it is missing, PUPS creates it with its own PUPS link.
-- **Not always available.** If PUPS can't write the file, e.g. because the website is served by another host, the configuration document omits `links_endpoint`.
+- **Read-modify-write.** PUPS reads the file, changes only the requesting app's own entries, and writes it back conditionally (e.g. with an ETag condition, or a lock, a hash check and an atomic rename). If the file changed in between, it rereads and retries.
+- **Everything else is preserved**: other links and properties, `subject` and `aliases`. If the file is not valid JSON, PUPS refuses with `409` and writes nothing. If it is missing, PUPS creates it with its own PUPS link.
+- **Whitelisted only.** Apps may only add the link relations and set the properties that are allowed for their scopes (see the rules below). There is no free-form editing.
+- **Not always available.** If PUPS can't write the file, e.g. because the website is served by another host, the configuration document omits `host_meta_endpoint`.
 
 ### Endpoint
 
-`links_endpoint` takes `POST` only, with a bearer token and a JSON body:
+`host_meta_endpoint` takes `POST` only, with a bearer token and a JSON body. Three actions exist:
 
 ```json
 { "action": "add", "rel": "https://bigwide.net/ns/feed", "href": "https://tim.example.com/files/feeds/bigwide/feed.xml", "type": "application/rss+xml" }
-```
-
-```json
 { "action": "remove", "rel": "https://bigwide.net/ns/feed", "href": "https://tim.example.com/files/feeds/bigwide/feed.xml" }
+{ "action": "set-property", "property": "https://bigwide.net/ns/name", "value": "Tim" }
 ```
 
-Responses: `201` added, `204` removed, `400` invalid request, `403` outside scope or rel not allowed, `409` conflict or invalid file, `413` limit reached.
+Responses: `201` added or set, `204` removed, `400` invalid request, `403` outside scope, rel or property not allowed, `409` conflict or invalid file, `413` limit reached.
 
-### Rules
+### Links
 
+- **Ownership marker.** Every link PUPS adds carries `"properties": {"https://bigwide.net/ns/pups#client": "<client_id>"}`. Links without it belong to the owner and are never changed or removed by PUPS.
 - **Own files only.** `href` must be the public URL of a file inside the app's granted scope. An app can never point the owner's links to another domain or to another app's files.
 - **Allowed rels.** For a file under a well-known path, only the `rels` declared for that path. For a file in `/appdata/`, only URI rels on the client host, with or without `www.` (`https://app.example/rel/…`). Nobody can register the PUPS rel itself or identity rels such as WebFinger's `http://webfinger.net/rel/profile-page`, `me`, `authorization_endpoint` or `openid`.
-- **Consent.** Registering a rel for a well-known path is covered by that path's scope; there is no extra scope.
 - **Conflicts.** For rels that their spec defines as single-valued, an existing link (the owner's or another app's) is not replaced; the request gets `409`.
 - **Limits.** At most 1,000 links in the file and 10 `/appdata/` links per app.
-- **Lifecycle.** When a grant is revoked, PUPS removes the app's `/appdata/` links. Its well-known links stay, because the files stay too; they lose the ownership marker and become the owner's. The owner can remove any link on the apps page.
+
+### Properties
+
+Top-level `properties` in `host-meta.json` ([RFC 6415](https://www.rfc-editor.org/rfc/rfc6415#appendix-A)) map a URI to a string. PUPS lets apps set a few **shared, well-known properties** that describe the domain as a whole, such as the owner's profile name.
+
+- **Well-known only.** An app may set only the `properties` declared for a well-known path in `well_known_paths`, and only if it holds that path's scope. There are no app-specific properties: an app that needs more, or structured data, writes its own file and links to it. Nobody can set PUPS's own properties (`https://bigwide.net/ns/pups#…`) or properties that name the domain's identity or its OAuth server.
+- **No owner.** Properties are shared by the owner and every app that holds the scope. Any of them may set or replace the value; the last write wins. Apps can't remove properties; only the owner can. PUPS doesn't track who set a property.
+- **Values.** A string of at most 2,048 characters, without control characters. Setting `null` or an empty string is not possible. If the spec that defines a property says its value is a URL, it must be the public URL of a file inside the app's granted scope, as for link `href`s.
+
+### Consent and lifecycle
+
+- **Consent.** Adding a rel or setting a property for a well-known path is covered by that path's scope and its step-up confirmation; there is no extra scope. The consent screen lists the rels and properties the scope allows.
+- **Revocation.** When a grant is revoked, PUPS removes the app's `/appdata/` links. Its well-known links stay, because the files stay too; they lose the ownership marker and become the owner's. Properties are never removed on revocation.
+- **Owner control.** The owner can remove any link or property on the apps page.
 
 ## Owner authentication
 
@@ -644,11 +656,12 @@ A test runner takes a base URL and a test client with its own CIMD document, and
 - An `identify`-only token can't write.
 - Same-domain mode sets no cookie on any response.
 - `host-meta.json` links: owner entries untouched, foreign `href`s and reserved rels rejected, concurrent changes retried, invalid JSON refused with `409`, limits enforced, `/appdata/` links removed on revocation.
+- `host-meta.json` properties: only properties declared for a granted well-known path can be set, others → `403`; there is no way for apps to remove a property; overlong values, control characters and URL values outside the scope are rejected; other links and properties are untouched.
 
 ## Open questions
 
-- **Names and URIs.** The link relation `https://bigwide.net/ns/personal-storage`, the ownership property `https://bigwide.net/ns/pups#client` and the feed rel `https://bigwide.net/ns/feed` are placeholders, to be published on bigwide.net.
-- **The list of well-known paths.** Which files and directories may be declared, which rels belong to each, which rels are single-valued, and how the consent screen describes them. SocialSpec's three files are the first candidates.
+- **Names and URIs.** The link relation `https://bigwide.net/ns/personal-storage`, the ownership property `https://bigwide.net/ns/pups#client`, the feed rel `https://bigwide.net/ns/feed` and the property `https://bigwide.net/ns/name` are placeholders, to be published on bigwide.net.
+- **The list of well-known paths.** Which files and directories may be declared, which rels and properties belong to each, which rels are single-valued, which property values are URLs, and how the consent screen describes them. SocialSpec's three files are the first candidates.
 - **Refresh token grace.** Strict reuse detection can lock out an app that lost the response to a refresh. Some OAuth libraries keep the previous refresh token valid until the new one is used. Should the spec allow that, at the cost of weaker reuse detection?
 - **Sender-constrained tokens.** Should a later version support [DPoP](https://www.rfc-editor.org/rfc/rfc9449), so that a copied token is useless without the app's key?
 - **More types.** Are there file types that SocialSpec or feed apps need beyond the allowlist (e.g. `.ics` calendars, `.pdf`)?

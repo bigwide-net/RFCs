@@ -60,7 +60,7 @@ Config document (`personal-storage.json`, path is a placeholder):
   "public_base": "https://tim.example/files/",
   "scopes_supported": ["identify", "write:/appdata/"],
   "well_known_paths": ["/feeds/", "/profile.json"],
-  "links_endpoint": "https://tim.example/pups/links",
+  "host_meta_endpoint": "https://tim.example/pups/host-meta",
   "max_upload_bytes": 26214400,
   "spec_version": "0.1"
 }
@@ -226,35 +226,46 @@ Every successful authorization also proves that the person controls the domain, 
 - **Higher stakes for the owner login.** A compromised owner login or issuer now means impersonation everywhere, not just file tampering. Domains that also run web applications should use the auth subdomain (Worker), and the PHP installer warning mentions impersonation, not only file access.
 - **Privacy:** apps learn the owner's domain, which is often the person's real name. That is the purpose, but the consent screen must make it visible.
 
-### 9. Registering links in host-meta.json
+### 9. Editing host-meta.json (links and properties)
 
-Apps never write `/.well-known/host-meta.json` themselves (dot-segments are rejected). Instead PUPS edits the file on their behalf, so an app that publishes, for example, a socialspec about page can make sure it is properly declared.
+Apps never write `/.well-known/host-meta.json` themselves (dot-segments are rejected). Instead PUPS edits the file on their behalf, so an app that publishes, for example, a socialspec about page can make sure it is properly declared, with a link or a top-level property.
 
-**The file is the source of truth.** PUPS keeps no separate link registry. The owner or their CMS may edit the file at any time, and PUPS must never overwrite their entries.
+**The file is the source of truth.** PUPS keeps no separate registry. The owner or their CMS may edit the file at any time, and PUPS must never change the owner's links. Properties are shared (see below).
 
-- **Ownership marker:** every link PUPS adds carries a property naming the app, e.g. `"properties": {"https://bigwide.net/ns/pups#client": "https://app.example/oauth/client.json"}`. Links without this property belong to the owner and are never changed or removed by PUPS.
-- **Read-modify-write:** PUPS reads the file, changes only the requesting app's own links, and writes it back conditionally: the Worker uses an R2 `onlyIf` ETag condition; PHP takes a lock, checks that the file's hash is unchanged, writes a temp file and renames it. If the file changed in between, PUPS rereads and retries.
-- **Preserve everything else:** other links, `subject`, `aliases` and top-level `properties` are kept. If the file is not valid JSON, PUPS refuses with `409` and never writes it.
+- **Read-modify-write:** PUPS reads the file, changes only the requesting app's own entries, and writes it back conditionally: the Worker uses an R2 `onlyIf` ETag condition; PHP takes a lock, checks that the file's hash is unchanged, writes a temp file and renames it. If the file changed in between, PUPS rereads and retries.
+- **Preserve everything else:** other links and properties, `subject` and `aliases` are kept. If the file is not valid JSON, PUPS refuses with `409` and never writes it.
+- **Whitelisted only:** apps may only add the rels and set the properties allowed for their scopes; there is no free-form editing.
 - **Missing file:** if no `host-meta.json` exists, PUPS creates it, including its own PUPS link.
-- **Out of reach:** if PUPS cannot write the file (e.g. the website is served by another host that the Worker does not control, or the PHP install cannot write to the domain root), the config omits `links_endpoint` and apps know registration is unavailable.
+- **Out of reach:** if PUPS cannot write the file (e.g. the website is served by another host that the Worker does not control, or the PHP install cannot write to the domain root), the config omits `host_meta_endpoint` and apps know editing is unavailable.
 
-**Endpoint.** The config declares `links_endpoint`. It takes POST only, so it works on hosts that block PUT/DELETE:
+**Endpoint.** The config declares `host_meta_endpoint`. It takes POST only, so it works on hosts that block PUT/DELETE:
 
 ```json
 { "action": "add", "rel": "…", "href": "https://tim.example/feeds/bigwide/about.json", "type": "application/json" }
 { "action": "remove", "rel": "…", "href": "https://tim.example/feeds/bigwide/about.json" }
+{ "action": "set-property", "property": "…", "value": "Tim" }
 ```
 
-Responses: `201` added, `204` removed, `403` outside scope, `409` conflict or invalid file, `413` limit reached.
+Responses: `201` added or set, `204` removed, `400` invalid request, `403` outside scope or rel/property not allowed, `409` conflict or invalid file, `413` limit reached.
 
-**Rules:**
+**Rules for links:**
 
+- **Ownership marker:** every link PUPS adds carries a property naming the app, e.g. `"properties": {"https://bigwide.net/ns/pups#client": "https://app.example/oauth/client.json"}`. Links without this property belong to the owner and are never changed or removed by PUPS.
 - **Same-domain targets only:** `href` must point to a file on the owner's domain inside the app's granted scope (its own `/appdata/` or a granted well-known path). An app can never point the owner's links at another domain.
 - **Rel namespaces:** links into a well-known path may use only the rels PUPS associates with that path in its config; links into `/appdata/` may use only URI rels on the app's own domain (e.g. `https://app.example/rel/…`). Nobody can register the PUPS rel itself or common identity rels such as WebFinger's profile page.
-- **Consent:** registering a well-known rel is covered by that path's well-known scope and its step-up confirmation; no extra scope.
 - **Conflicts:** for single-valued well-known rels, an existing link (the owner's or another app's) is not replaced; the request gets `409`.
 - **Limits:** at most 1,000 links in the file overall and 10 `/appdata/` links per app.
-- **Lifecycle:** when a grant is revoked, the app's `/appdata/` links are removed. Its well-known links stay, because the files stay too, and lose their ownership marker, so they become the owner's. The owner can remove any link from `/apps`.
+
+**Rules for properties** (top-level `properties`, URI → string, RFC 6415):
+
+- **Well-known only:** properties are a few shared, well-known values such as the owner's profile name. An app may set only the properties PUPS associates with a well-known path in its config, and only if it holds that path's scope. There are no app-specific properties: an app that needs more, or structured data, writes its own file and links to it. Nobody can set PUPS's own properties (`https://bigwide.net/ns/pups#…`) or properties naming the domain's identity or OAuth server.
+- **No owner:** properties are shared by the owner and every app holding the scope; any of them may set or replace a value, last write wins. Apps cannot remove properties; only the owner can. PUPS does not track who set a property.
+- **Values:** a string of at most 2,048 characters without control characters; no `null` and no empty string. If the property's spec defines its value as a URL, it must be the public URL of a file inside the app's granted scope, as for link `href`s.
+
+**Consent and lifecycle:**
+
+- **Consent:** adding a well-known rel or setting a well-known property is covered by that path's well-known scope and its step-up confirmation; no extra scope. The consent screen lists the rels and properties the scope allows.
+- **Lifecycle:** when a grant is revoked, the app's `/appdata/` links are removed. Its well-known links stay, because the files stay too, and lose their ownership marker, so they become the owner's. Properties are never removed on revocation. The owner can remove any link or property from `/apps`.
 
 ## Phase 1: Cloudflare Worker
 
@@ -407,7 +418,7 @@ A test runner (Vitest + a fake CIMD client) that takes a base URL and runs again
 - [ ] Traversal paths (`..`, encoded `%2e%2e`, backslashes) → 400
 - [ ] Disallowed types (.php, .phtml, feed.php.json, .htaccess, HTML or JavaScript anywhere, any path outside /appdata/ and the declared well-known paths) → 415 or 403, nothing stored; sandbox headers present on every uploaded file; oversized upload → 413, nothing stored; all upload tests repeated through post\_endpoint when declared
 - [ ] Preflight and all responses carry the required CORS headers, including on errors
-- [ ] Revoked grant → all its tokens fail immediately; token response carries me matching the discovered domain; an identify-only token cannot write; same-domain mode sets no cookie on any response; uploaded files fetched with Service-Worker: script → 403; host-meta link add/remove leaves owner entries untouched, rejects foreign hrefs and reserved rels, retries on concurrent changes, refuses invalid JSON and enforces the limits
+- [ ] Revoked grant → all its tokens fail immediately; token response carries me matching the discovered domain; an identify-only token cannot write; same-domain mode sets no cookie on any response; uploaded files fetched with Service-Worker: script → 403; host-meta link add/remove leaves owner entries untouched, rejects foreign hrefs and reserved rels, retries on concurrent changes, refuses invalid JSON and enforces the limits; host-meta properties: only properties of a granted well-known path can be set, apps cannot remove properties, invalid values are rejected, other entries untouched
 
 ### Open questions
 
