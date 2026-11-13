@@ -1,4 +1,4 @@
-# RFC: Feed Submissions - Posting to Group Feeds with Webmention
+# RFC: Feed Submissions - Comments and Discussions with Webmention
 
 Nov 4, 2026 · @Tim Jansen
 
@@ -6,37 +6,41 @@ Latest version on GitHub: [RFC-4-Feed-Submissions.md](https://github.com/bigwide
 
 ## Summary
 
-This proposal lets a feed accept posts and comments from other feeds. A **group feed** works like a subreddit or a Facebook group, except that every post and comment is first published in its author's own RSS or JSON feed. The author then sends a [Webmention](https://www.w3.org/TR/webmention/) to the group, and the group republishes the item in its own feed.
+This proposal lets a feed accept comments, and optionally posts, from other feeds. The author first publishes the comment in an RSS or JSON feed on their own domain, then sends a [Webmention](https://www.w3.org/TR/webmention/) to the target. The server checks it and republishes it in a comment feed. It works for two kinds of targets:
+
+- **A blog or any other feed with posts**: readers comment on its posts, and reply to each other's comments. The feed accepts comments only.
+- **A discussion group**, like a subreddit or a Facebook group: the group feed accepts new posts as well as comments. Anyone can start a thread.
 
 The proposal adds two things to RSS (namespace `https://rssmention.bigwide.net/`, prefix `rm:`) and JSON Feed:
 
 - **`submissions`**, on the feed: where to send the webmention, the terms of service, and the rules a submission must follow (title, length, allowed HTML, comment limits, editing).
 - **`commenting`**, on an item: whether the item accepts comments.
 
-Everything else comes from existing specs. Replies, comment feeds, counts, Markdown and accounts use the [source namespace](https://source.scripting.com/) in RSS and [RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md) in JSON Feed. The allowed HTML is a subset of [Feed HTML (RFC-2)](https://github.com/bigwide-net/RFCs/blob/main/RFC-2-HTML-Subset-for-Feed-Content.md). Sending a submission is a plain webmention.
+Everything else comes from existing specs. Replies, comment feeds, counts, Markdown and accounts use the [source namespace](https://source.scripting.com/) in RSS and [RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md) in JSON Feed. The allowed formatting is [Comment HTML and Markdown (RFC-5)](https://github.com/bigwide-net/RFCs/blob/main/RFC-5-Comment-HTML.md). Sending a submission is a plain webmention.
 
-[rssmention](https://github.com/bigwide-net/rssmention) is the reference implementation.
+[rssmention](https://github.com/bigwide-net/rssmention) is the reference implementation. It supports only `republish: full`.
 
-**Why now.** Social-RSS systems like rss.chat already link posts and replies across feeds with `source:inReplyTo` and `source:comments`. A reply in one feed can point at a post in another, but nobody collects the replies in one place: the author of a post has to find the replies, and readers of a reply can't see the rest of the conversation. A group feed fills that gap without a new account system. The author's feed is their identity, the group feed is the shared space, and webmention is the notification. What is missing is a way for a client to learn, from the group feed alone, where to submit and which rules apply. Without it, a client fails at the first post that is too long or has no title, and the author learns why only from an error message.
+**Why now.** [rss.chat](https://rss.chat) shows that a feed post can carry a conversation: readers browse the comments on a post and reply to them, linked with `source:inReplyTo` and `source:comments`. But the current implementation relies on a central server, and users must register on that server before they can write a comment. This proposal allows commenting without registering anywhere. The author only needs to prove that they own their domain, and they do that by publishing the comment on it. Their domain is their identity, as established by [socialspec.org](https://socialspec.org); their feed is where they publish, and webmention is how the comment reaches the post. What is missing is a way for a client to learn, from the target feed alone, where to submit and which rules apply. Without it, a client fails at the first comment that is too long or uses a link where links are not allowed, and the author learns why only from an error message, or from finding that the comment was not published at all, or was published with features missing.
 
 ## Roles
 
-- **Group server**: publishes one or more group feeds, receives webmentions, checks them and republishes accepted items.
-- **Author feed**: an RSS or JSON feed that the author controls. It contains the item to submit.
+- **Server**: receives webmentions for one or more feeds, checks them and republishes accepted items in comment feeds. For a blog it hosts only the comments, and the blog itself can live anywhere. For a discussion group it also publishes the group feed with the posts.
+- **Target feed**: a feed that announces `submissions`: a blog's feed, or a group feed.
+- **Author feed**: an RSS or JSON feed on the author's domain that contains the item to submit. It doesn't have to be the author's main public feed, and usually isn't: it is typically a feed only for commenting. A client may even create one feed per site the author comments on, or one per comment.
 - **Client**: the software that writes the item into the author feed and sends the webmention. It can be a blog engine, a feed-based social app or a script.
-- **Reader**: any feed reader. It shows group feeds like other feeds; the extensions in this proposal only matter to it if it offers a "reply" button.
+- **Reader**: any feed reader. It shows target and comment feeds like other feeds; the extensions in this proposal only matter to it if it offers a "reply" button.
 
 ## Overview
 
-1. The client reads the group feed and finds `submissions`: the endpoint and the rules.
-2. The client publishes an item in the author feed. The item's `inReplyTo` names the target: the group feed for a new post, or a post or comment for a reply.
+1. The client reads the target feed and finds `submissions`: the endpoint and the rules.
+2. The client publishes an item in the author feed. The item's `inReplyTo` names the target: a post in the target feed (a blog post or a group post), a comment, or, for a new post in a group, the group feed itself.
 3. The client sends a webmention with `source` = author feed URL + `#guid` and `target` = the same value as `inReplyTo`.
-4. The group server answers `201 Created` with a status page, fetches the author feed, checks the item against the rules and republishes it under a new guid.
-5. The republished post points to its comment feed (`source:comments`). Replies to it repeat steps 2–4 with the post as their target.
+4. The server answers `201 Created` with a status page, fetches the author feed, checks the item against the rules and republishes it under a new guid.
+5. Every post and comment points to its comment feed (`source:comments`). Replies repeat steps 2–4 with that post or comment as their target.
 
 ## Feed: `submissions`
 
-`submissions` describes how to submit to the feed. It may appear in every feed of a group: the posts feed, its archives and the comment feeds. All of them carry the same rules, so a client can submit from whatever feed it is showing.
+`submissions` describes how to submit to the feed. It may appear in the target feed and in every feed the server publishes for it: archives and comment feeds. The block holds two policies with their own rules: `posts` for starting a new discussion in the group feed, and `comments` for replying to a post or to a comment in its thread. They usually differ: in the example below, a new discussion needs a title and may be up to 8000 characters long, while a comment in that thread has no title and is limited to 4000. See [Policies](#policies).
 
 ### RSS
 
@@ -49,7 +53,7 @@ Everything else comes from existing specs. Replies, comment feeds, counts, Markd
     <rm:tos>https://twowavesandadot.blog/discussion/tos.html</rm:tos>
     <rm:policies type="posts" minLength="10" maxLength="8000" title="required" allowLinks="true" … commentLimit="1000"/>
     <rm:policies type="comments" minLength="10" maxLength="4000" title="none" allowLinks="true" … commentLimit="20" maxDepth="5"/>
-    <rm:republish>true</rm:republish>
+    <rm:republish>full</rm:republish>
   </rm:submissions>
 </channel>
 </rss>
@@ -70,54 +74,68 @@ The namespace URI is `https://rssmention.bigwide.net/`. Readers should also acce
     "posts": { "minLength": 10, "maxLength": 8000, "title": "required", "allowLinks": true, "commentLimit": 1000 },
     "comments": { "minLength": 10, "maxLength": 4000, "title": "none", "allowLinks": true, "commentLimit": 20, "maxDepth": 5 }
   },
-  "republish": true
+  "republish": "full"
 }
 ```
 
-- `about` should be this document's URL. **This is not its final location**: the URL will change once the spec has a permanent home. Readers must therefore **ignore the value of `about`**: they recognize the extension by the name `_submissions` alone. A group server may also write the namespace URI (`https://rssmention.bigwide.net/`) there.
-- Every field except `url` is optional. A reader ignores fields it doesn't know and values of the wrong type.
+- `about` should be this document's URL. **This is not its final location**: the URL will change once the spec has a permanent home. Readers must therefore **ignore the value of `about`**: they recognize the extension by the name `_submissions` alone. A server may also write the namespace URI (`https://rssmention.bigwide.net/`) there.
+- A reader ignores fields it doesn't know and values of the wrong type.
 
 ### Fields
 
 | JSON `_submissions` | RSS `rm:submissions` | Meaning |
 | --- | --- | --- |
 | `url` | `<rm:url>` | **Required.** The webmention endpoint for posts and comments. Absolute `http(s)` URL. |
+| `republish` | `<rm:republish>` | **Required.** How accepted submissions are published: `full`, `summary` or `no`. See [Republishing](#republishing). |
 | `tos` | `<rm:tos>` | The terms of service. Clients should show the link before the first submission. |
-| `policies.posts` | `<rm:policies type="posts">` | Rules for new posts. See [Policies](#policies). |
-| `policies.comments` | `<rm:policies type="comments">` | Rules for comments and replies to comments. |
-| `republish` | `<rm:republish>` | `true` if accepted submissions appear as items in the group's feeds. See the open questions. |
+| `policies.posts` | `<rm:policies type="posts">` | Rules for new posts. Missing: the feed accepts no posts. See [Policies](#policies). |
+| `policies.comments` | `<rm:policies type="comments">` | Rules for comments and replies to comments. Missing: the feed accepts no comments. |
+
+**Posts, comments or both.** A blog announces only `comments`: readers comment on the blog's posts, but can't add posts to the blog. A discussion group announces both. A feed with `submissions` but neither policy accepts nothing; that only makes sense temporarily, for example while a group is closed.
 
 **Discovery.** The endpoint is also announced the standard webmention way, so generic webmention senders find it: `<atom:link rel="webmention" href="…"/>` in RSS and an HTTP `Link: <…>; rel="webmention"` header where the server can send one. `url` and the webmention link must name the same endpoint.
 
+### Republishing
+
+`republish` says what happens to an accepted submission:
+
+- **`full`**: the server publishes the whole item in its feeds, next to the other comments, under the author's name.
+- **`summary`**: the server publishes only an abstract of the text, under the author's name, and links to the rest. The republished item must therefore have a link to the full text in the author feed (`link` in RSS, `url` in JSON Feed), and the server rejects submissions without one.
+- **`no`**: the server only delivers the submission to the owner of the target feed, like an email to the author of a blog. Nothing is published, and there are no comment feeds. Some blogs prefer this: they want to hear from their readers without hosting a public discussion.
+
+A reader that finds a value it doesn't know treats it like `no` and doesn't offer to submit.
+
+`republish` is also a statement to the client. When it is `full` or `summary`, sending the webmention means that the author agrees to the item, or its abstract, being republished. The interface makes the consequence of calling it explicit: a client must make clear to the author, before the first submission, that the comment will be published, and show the terms of service along with it.
+
 ## Policies
 
-A policy is a flat list of rules. In RSS each rule is an attribute of `<rm:policies>`, with booleans written as `true` or `false`. In JSON it is a property with a native JSON type. A missing rule means the server doesn't announce it, not that it is unlimited: the client should then expect the server to enforce a sensible default.
+A policy is a flat list of rules. In RSS each rule is an attribute of `<rm:policies>`, with booleans written as `true` or `false`. In JSON it is a property with a native JSON type.
 
-| Rule | Type | Meaning |
-| --- | --- | --- |
-| `title` | `required` \| `allowed` \| `none` | Whether the item must, may or must not have a title. Comments usually use `none`. |
-| `minLength` | integer | Minimum length of the visible text in characters, after rendering and with whitespace collapsed. Markup doesn't count. |
-| `maxLength` | integer | Maximum length of the content in characters: the Markdown if the item has `markdown`, otherwise the HTML. |
-| `allowStyle` | boolean | `strong`, `em` |
-| `allowLinks` | boolean | `a` with `href` |
-| `allowCode` | boolean | `code`, `pre` |
-| `allowQuote` | boolean | `q`, `blockquote` |
-| `allowImages` | boolean | `img` with `src` |
-| `allowTables` | boolean | `table`, `thead`, `tbody`, `tr`, `th`, `td` |
-| `allowLists` | boolean | `ul`, `ol`, `li` |
-| `allowHeadlines` | boolean | `h1`–`h6` |
-| `urlAutoLinking` | boolean | The server turns bare URLs in the text into links, even if `allowLinks` is `false`. |
-| `requireSocialSpec` | boolean | The item or its feed must have a `socialspec` account whose host is the author feed's host. See [Authorship](#authorship). |
-| `allowEdit` | boolean | Re-sending the webmention updates the republished item. |
-| `allowDelete` | boolean | Re-sending it after the item was removed from the author feed (or the feed answers 404/410) deletes the republished item. |
-| `commentLimit` | integer | For posts: the maximum number of comments on all levels. For comments: the maximum number of direct replies to one comment. |
-| `maxDepth` | integer | Comments only: how deep replies can be nested. Replies to a post have depth 1. |
+A missing rule has the default value from the table below. Clients and servers must use these defaults; they never guess. Servers should still announce every rule they enforce.
 
-**Allowed HTML.** `p` and `br` are always allowed. The `allow*` rules add the elements listed above, all of them from Feed HTML. Any other element makes the server reject the submission rather than silently drop it, so that the author is not surprised by what gets published. Attributes other than `a@href`, `img@src` and `img@alt` are removed. A server may add more limits, for example on the number of paragraphs or the length of link text. It should describe them in its terms of service.
-
-**Markdown.** If the item has `markdown` (`source:markdown`, `_source.markdown`), the server renders it and ignores the HTML. Raw HTML inside the Markdown is escaped, not interpreted. The same element rules apply to the rendered result.
+| Rule | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `title` | `required` \| `allowed` \| `none` | `none` | Whether the item must, may or must not have a title. Comments usually use `none`; discussion groups usually require titles for posts. |
+| `minLength` | integer | `2` | Minimum length of the visible text in characters. See [Content](#content). |
+| `maxLength` | integer | `2000` | Maximum length of the content in characters. See [Content](#content). |
+| `allowStyle`, `allowLinks`, `allowCode`, `allowQuote`, `allowImages`, `allowTables`, `allowLists`, `allowHeadlines`, `urlAutoLinking` | boolean | `false` | The Comment HTML and Markdown features that are enabled. See [Content](#content). |
+| `requireSocialSpec` | boolean | `false` | The item or its feed must have a `socialspec` account whose host is the author feed's host. See [Authorship](#authorship). |
+| `allowEdit` | boolean | `false` | Re-sending the webmention updates the republished item. |
+| `allowDelete` | boolean | `false` | Re-sending it after the item was removed from the author feed (or the feed answers 404/410) deletes the republished item. |
+| `commentLimit` | integer | `1000` | For posts: the maximum number of comments on all levels. For comments: the maximum number of direct replies to one comment. |
+| `maxDepth` | integer | `5` | Comments only: how deep replies can be nested. Replies to a post have depth 1. |
 
 **Extending.** Servers may add rules. Clients ignore rules they don't know, and should then simply submit and let the server decide.
+
+## Content
+
+The content of a submission must be **Comment Markdown** or **Comment HTML**, defined in [RFC-5](https://github.com/bigwide-net/RFCs/blob/main/RFC-5-Comment-HTML.md). In short:
+
+- Comment Markdown is CommonMark with tables and strikethrough, and without raw HTML. Comment HTML is a small, strict subset of HTML, and what Comment Markdown renders to.
+- Paragraphs and line breaks are always allowed; the `allow*` rules above switch on optional features such as links, code, quotes or lists. Each feature covers both the HTML elements and the Markdown syntax that produces them.
+- Markdown (`source:markdown`, `_source.markdown`) is preferred over HTML, and plain text is the fallback.
+- A submission that breaks a rule is rejected with a reason, not repaired. The client is responsible for keeping the author within the rules: it offers only the enabled features and enforces the limits.
+- RFC-5 also defines how `minLength` and `maxLength` are measured, and how the server normalizes the HTML it republishes.
 
 ## Item: `commenting`
 
@@ -134,12 +152,36 @@ A policy is a flat list of rules. In RSS each rule is an attribute of `<rm:polic
 }
 ```
 
+**`allowComments` defaults to `true`.** If the feed has `submissions` with a `comments` policy, every item accepts comments unless it says `false`. Items don't need `commenting` to be open for comments.
+
 It is used in both directions:
 
-- **In a group feed**, on posts: `false` means the post is closed, for example by a moderator. Clients should hide the reply button, and the server rejects comments with `400`. A missing `commenting` means the item accepts comments if the feed has `submissions`.
-- **In an author feed**, on a submitted post: `false` asks the group server to publish the post with comments disabled. A missing value means comments are allowed.
+- **In a target feed**, on posts: `false` means the post is closed, for example by its author or a moderator. Clients should hide the reply button, and the server rejects comments with `400`.
+- **In an author feed**, on a submitted post: `false` asks the server to publish the post with comments disabled.
 
-`allowComments` must be a boolean in JSON and `true` or `false` in RSS. Readers ignore other values.
+`allowComments` must be a boolean in JSON and `true` or `false` in RSS. Readers ignore other values, and then use the default.
+
+## Reading in the client: CORS
+
+Discussions change fast. A group feed gets new posts and an active thread new comments within minutes, sometimes seconds. Many feed readers fetch feeds on a server and refresh them every 30 or 60 minutes. That works for blogs, but not for a conversation: by the time the reader shows a comment, the thread has moved on, and an author who replies can't see the answers to their own comment.
+
+Feeds that carry a discussion are therefore meant to be **fetched by the client itself**, typically in the browser, whenever the user opens or refreshes a thread. For that to work, these feeds **must** allow cross-origin reading with [CORS](https://fetch.spec.whatwg.org/#http-cors-protocol), for every origin:
+
+```
+Access-Control-Allow-Origin: *
+```
+
+This applies to:
+
+- **Target feeds**: a group feed, and a blog's feed that announces `submissions`. The client reads the rules and the posts from them.
+- **Comment feeds** and **archives** that the server publishes.
+- **The webmention endpoint and the status pages**, so that a browser-based client can submit and follow the result. The endpoint must also send `Access-Control-Expose-Headers: Location`, because the client needs the status page URL from `Location`. A form-encoded `POST` is a [simple request](https://fetch.spec.whatwg.org/#cors-safelisted-request-header) and needs no preflight; a server that accepts JSON bodies must also answer the `OPTIONS` preflight.
+
+Use `*`, not a list of known origins: any client on any site must be able to read the feeds. The feeds are public and the requests carry no credentials, so `*` exposes nothing that isn't already public.
+
+Feeds that are fetched often should be cheap to fetch. Servers should support conditional requests (`ETag` or `Last-Modified`) and keep caching times short, a few seconds to a minute, so that a client's refresh shows new comments right away.
+
+Author feeds are fetched by the server, not the client, and don't need CORS for this proposal.
 
 ## Submitting
 
@@ -150,8 +192,14 @@ POST /groups/twowaves/mention HTTP/1.1
 Host: rm.example.org
 Content-Type: application/x-www-form-urlencoded
 
-source=https%3A%2F%2Falice.example.com%2Ffeed.xml%23post-2026-11-04&target=https%3A%2F%2Frm.example.org%2Fgroups%2Ftwowaves%2Fposts.xml
+source=https%3A%2F%2Fbob.example.net%2Ffeed.xml%23c-17&target=https%3A%2F%2Frm.example.org%2Fgroups%2Ftwowaves%2Fposts.xml%23a8Kd03XpQz
 ```
+
+### Author feeds
+
+Author feeds are **RSS 2.0 or JSON Feed**. Atom is not supported: two formats are enough. RSS because it is by far the most widespread, JSON Feed because it is the easiest to produce and to parse.
+
+An author feed only needs to be on the author's domain (see [Authorship](#authorship)). It can be a feed that exists just for commenting, one per site or one per comment, and doesn't need to be listed or linked anywhere. The server reads it when it receives the webmention, and again when the author re-sends the webmention to edit or delete the item, so it should stay available as long as the author may want to do that.
 
 ### Source
 
@@ -159,22 +207,25 @@ source=https%3A%2F%2Falice.example.com%2Ffeed.xml%23post-2026-11-04&target=https
 
 ### Target and `inReplyTo`
 
-Items in a group feed are referenced by **the feed that contains them plus `#guid`**. This works for items that have no page of their own and makes the containing feed easy to find.
+Posts and comments are referenced by **the feed that contains them plus `#guid`**. This works for items that have no page of their own and makes the containing feed easy to find.
 
 | Submission | `target` | Example |
 | --- | --- | --- |
-| New post | the group's posts feed | `https://rm.example.org/groups/twowaves/posts.xml` |
-| Comment on a post | the posts feed + `#post-guid` | `…/posts.xml#a8Kd03XpQz` |
-| Reply to a comment | the comment feed that contains the comment + `#comment-guid` | `…/comments/a8Kd03XpQz/comments.xml#a8Kd03XpQz-k2m9x` |
+| Comment on a blog post | the blog's feed + `#post-guid` | `https://alice.example.com/feed.xml#post-42` |
+| Comment on a group post | the group feed + `#post-guid` | `https://rm.example.org/groups/twowaves/posts.xml#a8Kd03XpQz` |
+| Reply to a comment | the comment feed that contains the comment + `#comment-guid` | `https://rm.example.org/…/comments/a8Kd03XpQz/comments.xml#a8Kd03XpQz-k2m9x` |
+| New post in a group | the group feed, without fragment | `https://rm.example.org/groups/twowaves/posts.xml` |
 
 - The item in the author feed must have `inReplyTo` (`source:inReplyTo`, `_source.inReplyTo`) with the same value as `target`. This is the link from source to target that webmention requires, and it lets readers of the author feed show the reply in context.
-- The RSS and JSON versions of a group feed (`posts.xml` and `posts.json`) count as the same target. The server compares them after decoding the fragment.
-- A client finds the comment feed of a post or comment in its `comments.feedUrl` (`source:comments feedUrl`). Adding `#guid` gives the target for a reply.
-- A post that is in an archive may also be targeted through the archive feed: `…/archive/posts-3.xml#a8Kd03XpQz`. New posts must target the posts feed.
+- If a feed is published as both RSS and JSON Feed, the two count as the same target. The server compares them after decoding the fragment.
+- A client finds the comment feed of a post or comment in its `comments.feedUrl` (`source:comments feedUrl`). Adding `#guid` gives the target for a reply. For a blog, the server publishes the comment feeds, and the blog's posts point to them with `source:comments`.
+- A post that is in an archive may also be targeted through the archive feed: `…/archive/posts-3.xml#a8Kd03XpQz`. New posts must target the group feed itself.
 
 ### Authorship
 
-Anyone can send a webmention for any feed. To show that the author controls the source, an item or its feed carries a `socialspec` account (`<source:account service="socialspec">@alice.example.com</source:account>`, `_source.accounts.socialspec`). When `requireSocialSpec` is set, its host must be the author feed's host name, `alice.example.com` for `https://alice.example.com/feed.xml`. Without `requireSocialSpec`, the server republishes the account only if it matches and leaves it out otherwise, so a group feed never shows an unverified account.
+Anyone can send a webmention for any feed. To show that the author controls the source, an item or its feed carries a `socialspec` account (`<source:account service="socialspec">@alice.example.com</source:account>`, `_source.accounts.socialspec`). When `requireSocialSpec` is set, its host must be the author feed's host name, `alice.example.com` for `https://alice.example.com/feed.xml`. Without `requireSocialSpec`, the server republishes the account only if it matches and leaves it out otherwise, so a feed never shows an unverified account.
+
+**Every author needs their own domain or subdomain.** As in [socialspec.org](https://socialspec.org), the domain is the author's identity. Shared hosts, where many users publish under one host name, can't prove authorship this way. This is deliberate: it is what allows servers not to identify users any further. Whoever gave the author a domain or subdomain has already identified them, and the server doesn't need to repeat that with accounts, passwords or e-mail addresses.
 
 ### What is republished
 
@@ -186,22 +237,22 @@ The server does the cheap checks synchronously: syntax, whether the target exist
 
 ```
 HTTP/1.1 201 Created
-Location: https://rm.example.org/groups/twowaves/status/a8Kd03XpQz
+Location: https://rm.example.org/groups/twowaves/status/a8Kd03XpQz-k2m9x
 Content-Type: application/json
 
-{"status":"waiting","guid":"a8Kd03XpQz","statusUrl":"https://rm.example.org/groups/twowaves/status/a8Kd03XpQz"}
+{"status":"waiting","guid":"a8Kd03XpQz-k2m9x","statusUrl":"https://rm.example.org/groups/twowaves/status/a8Kd03XpQz-k2m9x"}
 ```
 
-`guid` is the guid the item will have in the group feed. The status page returns one of these objects:
+`guid` is the guid the item will have when it is republished. The status page returns one of these objects:
 
 | `status` | Other fields | Meaning |
 | --- | --- | --- |
 | `waiting` | | Not processed yet. Poll again after a few seconds. |
-| `success` | `pubDate`, `pubUrl` | Published. `pubUrl` is the containing feed + `#guid`. |
+| `success` | `pubDate`, `pubUrl` | Accepted. `pubUrl` is the containing feed + `#guid`; it is missing if `republish` is `no`. |
 | `deleted` | | The resubmission deleted the item. |
 | `failure` | `code`, `text` | Rejected. `text` is a human-readable reason to show the author. |
 
-Status pages are short-lived: rssmention keeps them for at least an hour. Clients should not rely on them after that, and should read the group feed instead.
+Status pages are short-lived: rssmention keeps them for at least an hour. Clients should not rely on them after that, and should read the comment feed instead.
 
 **Failure codes.** Clients can show `text` without knowing `code`. Codes let them react, for example by highlighting the title field:
 
@@ -213,8 +264,9 @@ Status pages are short-lived: rssmention keeps them for at least an hour. Client
 | `in-reply-to-missing`, `in-reply-to-mismatch` | `inReplyTo` is missing or differs from `target`. |
 | `socialspec-missing`, `socialspec-mismatch` | See [Authorship](#authorship). |
 | `title-required`, `title-not-allowed`, `title-too-long` | The `title` rule. |
-| `empty-content`, `too-short`, `too-long`, `malformed-html`, `forbidden-element`, `bad-nesting`, `missing-attribute`, `invalid-url`, `url-too-long`, `link-text-too-long`, `weird-formatting` | Content rules. Servers may define more content codes. |
+| `empty-content`, `too-short`, `too-long`, `malformed-html`, `forbidden-element`, `bad-nesting`, `missing-attribute`, `invalid-url`, `url-too-long`, `link-text-too-long`, `weird-formatting` | Content rules, see RFC-5. Servers may define more content codes. |
 | `comments-disabled`, `comment-limit`, `max-depth`, `target-gone` | The target no longer accepts the comment. |
+| `link-missing` | `republish` is `summary` and the item has no link to its full text. |
 | `edit-not-allowed` | The source was submitted before and `allowEdit` is not set. |
 | `moderation-rejected`, `moderation-unavailable` | The server's moderation rejected the item, or could not run. |
 
@@ -246,27 +298,81 @@ Fields used from RFC-1 and the source namespace:
 | `comments.feedUrl`, `count` | `<source:comments feedUrl count>` | Where the replies to a post or comment are, and how many. |
 | `comments.total` | — | Comments on all levels of a post. |
 | `markdown` | `<source:markdown>` | The submitted text; republished alongside the HTML. |
-| `accounts.socialspec` | `<source:account service="socialspec">` | Authorship of a submission; the group's own account on the feed. |
+| `accounts.socialspec` | `<source:account service="socialspec">` | Authorship of a submission; the target's own account on the feed. |
 
-## Notes for group servers and clients
+## Notes for servers and clients
 
-**Group servers**
+**Servers**
 
-- Put `submissions` in every feed of a group, with the rules that are actually enforced. A client that follows them should not be rejected.
+- Put `submissions` in the target feed and every feed you publish for it, with the rules that are actually enforced. A client that follows them must not be rejected for breaking a rule.
 - Treat the author feed as untrusted: fetch it with a size and time limit, refuse private network addresses, and never fetch your own URLs.
-- Process submissions one at a time per group, or lock, so that comment limits and counts stay correct.
+- Process submissions one at a time per target feed, or lock, so that comment limits and counts stay correct.
 - Republished items carry `source:inReplyTo` (comments) and `source:comments` (posts and comments), so a reader can walk the thread without knowing this proposal.
+- Serve target feeds, comment feeds, archives, the endpoint and the status pages with `Access-Control-Allow-Origin: *`. See [Reading in the client: CORS](#reading-in-the-client-cors).
 
 **Clients**
 
-- Read the rules before publishing: check the title, length and elements locally, and show the terms of service.
-- Write `inReplyTo` exactly as the target, and keep the item in the author feed. If it drops out of the feed and the group allows deletes, the next webmention for it deletes the post.
+- Read the rules before the author starts writing. Offer only the enabled features and enforce the limits in the editor (see RFC-5). Show the terms of service, and that the comment will be published, in full or as an abstract, if `republish` is `full` or `summary`.
+- Write `inReplyTo` exactly as the target, and keep the item in the author feed. If it drops out of the feed and the server allows deletes, the next webmention for it deletes the comment.
+- Fetch target and comment feeds directly, when the user opens or refreshes a thread, not through a server-side feed reader that refreshes them every hour.
 - Poll the status page with a growing interval, and stop after a few minutes. A `waiting` status that never changes means the server restarted; resubmit.
-- Prefer the `.json` or `.xml` URLs consistently, but don't depend on it: servers treat them as the same.
 
-## Full example
+## Example: comments on a blog
 
-The group feed `https://rm.example.org/groups/twowaves/posts.json` with one post:
+Alice's blog feed `https://alice.example.com/feed.json` uses a comment server at `comments.example.org`. It accepts comments only, and announces it in `_submissions`. Her post points to its comment feed:
+
+```json
+{
+  "version": "https://jsonfeed.org/version/1.1",
+  "title": "Alice's blog",
+  "feed_url": "https://alice.example.com/feed.json",
+  "_submissions": {
+    "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md",
+    "url": "https://comments.example.org/groups/alice/mention",
+    "policies": {
+      "comments": { "minLength": 2, "maxLength": 2000, "allowStyle": true, "urlAutoLinking": true, "title": "none", "requireSocialSpec": true }
+    },
+    "republish": "full"
+  },
+  "items": [{
+    "id": "post-42",
+    "url": "https://alice.example.com/2026/11/rss-social",
+    "title": "Is RSS the better social network?",
+    "content_html": "<p>I think feeds are all we need.</p>",
+    "_source": {
+      "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
+      "comments": { "feedUrl": "https://comments.example.org/groups/alice/external/post-42/comments.json", "count": 0 }
+    }
+  }]
+}
+```
+
+Bob publishes his comment in `https://bob.example.net/feed.json`, with `inReplyTo` set to the post:
+
+```json
+{
+  "id": "c-17",
+  "authors": [{ "name": "Bob" }],
+  "content_html": "<p>Agreed, but discovery is hard.</p>",
+  "_source": {
+    "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
+    "inReplyTo": "https://alice.example.com/feed.json#post-42"
+  }
+}
+```
+
+and sends the webmention:
+
+```
+source=https://bob.example.net/feed.json#c-17
+target=https://alice.example.com/feed.json#post-42
+```
+
+The comment then appears in `https://comments.example.org/groups/alice/external/post-42/comments.json`. With rssmention, this setup is a group with `externalFeeds: ["https://alice.example.com/feed.json"]`, and the blog copies `_submissions` from `https://comments.example.org/groups/alice/submissions.json`.
+
+## Example: a discussion group
+
+The group feed `https://rm.example.org/groups/twowaves/posts.json`, as rssmention publishes it, with one post:
 
 ```json
 {
@@ -292,7 +398,7 @@ The group feed `https://rm.example.org/groups/twowaves/posts.json` with one post
         "allowEdit": false, "allowDelete": false, "commentLimit": 20, "maxDepth": 5
       }
     },
-    "republish": true
+    "republish": "full"
   },
   "_source": {
     "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
@@ -323,27 +429,19 @@ The group feed `https://rm.example.org/groups/twowaves/posts.json` with one post
 }
 ```
 
-Bob's author feed `https://bob.example.net/feed.json`, with a comment on that post:
+Bob's comment in his author feed `https://bob.example.net/feed.json`:
 
 ```json
 {
-  "version": "https://jsonfeed.org/version/1.1",
-  "title": "Bob",
+  "id": "c-17",
+  "authors": [{ "name": "Bob" }],
+  "date_published": "2026-11-04T10:20:00Z",
+  "content_html": "<p>Agreed, but discovery is hard.</p>",
   "_source": {
     "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
-    "accounts": { "socialspec": "@bob.example.net" }
-  },
-  "items": [{
-    "id": "c-17",
-    "authors": [{ "name": "Bob" }],
-    "date_published": "2026-11-04T10:20:00Z",
-    "content_html": "<p>Agreed, but discovery is hard.</p>",
-    "_source": {
-      "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
-      "markdown": "Agreed, but discovery is hard.",
-      "inReplyTo": "https://rm.example.org/groups/twowaves/posts.json#a8Kd03XpQz"
-    }
-  }]
+    "markdown": "Agreed, but discovery is hard.",
+    "inReplyTo": "https://rm.example.org/groups/twowaves/posts.json#a8Kd03XpQz"
+  }
 }
 ```
 
@@ -376,8 +474,4 @@ target=https://rm.example.org/groups/twowaves/posts.json#a8Kd03XpQz
 ## Open questions
 
 - **The namespace URI.** `https://rssmention.bigwide.net/` names the implementation, not the idea. Should the namespace be renamed (for example to `https://bigwide.net/ns/submissions/`) before other servers adopt it?
-- **`republish`.** It is always `true` today. Is there a use for `false`, such as an endpoint that only notifies a person or collects submissions for a newsletter? If not, it can go.
 - **Status pages.** The status object is not part of the Webmention spec, which leaves the status page open. Should this proposal standardize it, or only recommend it?
-- **Stronger authorship.** A `socialspec` account on the feed's own host proves control of the host, not of one user on a shared host. Shared hosts (rss.chat, micro.blog) need something better, for example a token in the feed or a signature.
-- **Feed HTML.** Should the `allow*` rules be replaced by one list of allowed elements, taken from RFC-2, so the rules can grow with Feed HTML?
-- **Atom.** Author feeds in Atom could be supported with `thr:in-reply-to` (RFC 4685) instead of `inReplyTo`. Is that worth the extra parsing?
