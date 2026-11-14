@@ -102,10 +102,11 @@ The `href` points to the configuration document. Its path is chosen by the serve
   "public_base": "https://tim.example.com/files/",
   "scopes_supported": ["identify", "write:/appdata/"],
   "well_known_paths": [
-    { "path": "/feeds/bigwide/", "rels": ["https://bigwide.net/ns/feed"] },
     { "path": "/.well-known/following.opml", "url": "https://tim.example.com/.well-known/following.opml" },
     { "path": "/.well-known/about.md", "url": "https://tim.example.com/.well-known/about.md", "properties": ["https://bigwide.net/ns/name"] },
-    { "path": "/.well-known/contact.vcf", "url": "https://tim.example.com/.well-known/contact.vcf" }
+    { "path": "/.well-known/contact.vcf", "url": "https://tim.example.com/.well-known/contact.vcf" },
+    { "path": "/feed.json", "url": "https://tim.example.com/feed.json" },
+    { "path": "/feed/", "url": "https://tim.example.com/feed/" }
   ],
   "host_meta_endpoint": "https://tim.example.com/pups/host-meta",
   "max_upload_bytes": 26214400,
@@ -173,7 +174,7 @@ The app creates a random `code_verifier` (43–128 characters), `code_challenge 
 GET /oauth/authorize?response_type=code
   &client_id=https://app.example/oauth/client.json
   &redirect_uri=https://app.example/callback
-  &scope=identify%20write:/appdata/app.example/%20write:/feeds/bigwide/
+  &scope=identify%20write:/appdata/app.example/%20write:/feed.json
   &state=…
   &code_challenge=…
   &code_challenge_method=S256
@@ -195,7 +196,7 @@ The owner authenticates (see [Owner authentication](#owner-authentication)) and 
 - A **"new app"** notice if this `client_id` has never been approved before.
 - A note that **the app runs on this computer** if the redirect URI is a loopback address.
 - A line saying that **the app will learn the owner's domain**. With `identify` alone the whole screen reads "Sign in to app.example as tim.example.com".
-- Each scope in plain words: "its own data (`/appdata/app.example/`)", "create, replace and delete files under `/feeds/bigwide/`", "replace your SocialSpec profile (`/.well-known/about.md`)". **Every scope outside the app's own directory is visibly marked** and needs step-up confirmation.
+- Each scope in plain words: "its own data (`/appdata/app.example/`)", "create, replace and delete your feed (`/feed.json`)", "create, replace and delete your profile (`/.well-known/about.md`)". **Every scope outside the app's own directory is visibly marked** and needs step-up confirmation.
 - A checkbox per scope, so the owner can drop individual scopes, and Approve / Deny.
 
 The approve form carries a CSRF token, and the page is served with `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`. It is never CORS-enabled.
@@ -229,7 +230,7 @@ Scopes are plain OAuth scope strings, separated by spaces. [RFC 9396](https://ww
 **Only two kinds of write scope exist**:
 
 1. The app's own directory, `write:/appdata/<client-host>/`, where `<client-host>` is the host of the requesting `client_id`. A request for another app's directory, for `/appdata/` itself or for anything deeper than the app's directory root is rejected with `invalid_scope`.
-2. A well-known path declared in `well_known_paths`: exactly the declared `path`, or, if the declared path is a directory, a directory or file inside it. `write:/feeds/bigwide/2026/` is valid if `/feeds/bigwide/` is declared.
+2. A well-known path declared in `well_known_paths`: exactly the declared `path`, or, if the declared path is a directory, a directory or file inside it. `write:/feed/2026/` is valid if `/feed/` is declared.
 
 Everything else is rejected, including `write:/`. Clients request only scopes that the configuration document allows; the server answers anything else with `invalid_scope`.
 
@@ -247,7 +248,7 @@ The app's directory is **not private**: its files are public like all others, an
 
 ### Well-known paths
 
-Some files have a location fixed by another spec: a SocialSpec profile must be at `/.well-known/about.md`, and an app that publishes bigwide.net feeds may need to write them where other apps expect them. These are **well-known paths**. The server declares the ones it offers in `well_known_paths`, and an app may write one only after the owner granted its scope, with step-up confirmation.
+Some files have a location fixed by another spec: a SocialSpec profile must be at `/.well-known/about.md`, and the owner's main feed is at `/feed.json`. These are **well-known paths**. The server declares the ones it offers in `well_known_paths`, and an app may write one only after the owner granted its scope, with step-up confirmation.
 
 Each entry is an object:
 
@@ -262,10 +263,30 @@ Each entry is an object:
 
 Rules:
 
-- A server declares only paths it can actually serve with the required headers (see [Serving files](#serving-files)), and only paths defined by a published spec. **A list of well-known paths will be maintained on bigwide.net** (open question). The owner may remove entries.
+- A server declares only paths it can actually serve with the required headers (see [Serving files](#serving-files)), and only paths from the [list of well-known paths](#the-list-of-well-known-paths) below, which will be maintained on bigwide.net. The owner may remove entries.
 - **Under `/.well-known/`, only single files may be declared**, never directories, and only files from that list. Never `host-meta`, `host-meta.json`, `webfinger`, `oauth-authorization-server`, `openid-configuration`, `security.txt`, `change-password`, or anything under `acme-challenge/` (an app that could write there could obtain TLS certificates for the domain).
 - The file-type allowlist applies to well-known paths just as to app data.
 - Apps request each well-known scope explicitly, create nothing next to a well-known file, and should write it with `If-Match`, because the owner may also edit it by hand.
+
+### The list of well-known paths
+
+A server may declare the following paths. All of them live at the domain root, so the `url` of each is `https://<owner host>` followed by the path. A server that can't write and serve the domain root doesn't declare them, and neither does a server whose website already serves one of the paths itself. WordPress, for example, serves its RSS feed at `/feed/`.
+
+| Path | Contents | Defined by | Consent screen | Properties |
+| --- | --- | --- | --- | --- |
+| `/.well-known/following.opml` | The people the owner follows | [FollowSpec](https://followspec.org) | the list of people you follow | — |
+| `/.well-known/about.md` | The owner's profile | [AboutSpec](https://aboutspec.org) | your profile | `https://bigwide.net/ns/name` |
+| `/.well-known/contact.vcf` | The owner's contact details | [ContactSpec](https://contactspec.org) | your contact details | — |
+| `/feed.json` | The owner's main feed | this RFC | your feed | — |
+| `/feed/` | The files of the main feed | this RFC | the files of your feed | — |
+
+No entry has link relations yet, and no property takes a URL. The consent screen describes a scope for a listed path with the text from the table, e.g. "create, replace and delete your feed (`/feed.json`)". A scope for a directory inside `/feed/` is described by its path.
+
+**`/feed.json`** is the owner's main feed: a [JSON Feed 1.1](https://www.jsonfeed.org/version/1.1/) document, with the extensions of the bigwide.net RFCs where they are used, e.g. [RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md) sources and [RFC-3](https://github.com/bigwide-net/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md) podcasting. Readers and apps find it on the domain without any discovery, and it can serve as the author feed of [RFC-4](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) comments. Its `feed_url` is `https://<owner host>/feed.json`. Like every `.json` file, it is served as `application/json`.
+
+**`/feed/`** holds the files that belong to the main feed: images and other media that its items reference, such as RFC-3 podcast episodes, and further JSON Feed documents that it points to, such as older pages linked with `next_url`. Apps organize the directory as they like, within the file-type allowlist. They store nothing there that the main feed doesn't use, directly or through another file in `/feed/`.
+
+Several apps may write the main feed. Each app changes only the items it created and keeps everything else in the file unchanged, including fields it doesn't know, and writes the file with `If-Match` (see [Concurrency](#concurrency)).
 
 ### Public URLs
 
@@ -494,8 +515,8 @@ Every successful authorization proves that the person controls the domain: only 
 `host_meta_endpoint` takes `POST` only, with a bearer token and a JSON body. Three actions exist:
 
 ```json
-{ "action": "add", "rel": "https://bigwide.net/ns/feed", "href": "https://tim.example.com/files/feeds/bigwide/feed.xml", "type": "application/rss+xml" }
-{ "action": "remove", "rel": "https://bigwide.net/ns/feed", "href": "https://tim.example.com/files/feeds/bigwide/feed.xml" }
+{ "action": "add", "rel": "https://app.example/rel/comments", "href": "https://tim.example.com/files/appdata/app.example/comments.json", "type": "application/feed+json" }
+{ "action": "remove", "rel": "https://app.example/rel/comments", "href": "https://tim.example.com/files/appdata/app.example/comments.json" }
 { "action": "set-property", "property": "https://bigwide.net/ns/name", "value": "Tim" }
 ```
 
@@ -624,7 +645,7 @@ An approved app can publish anything it likes in its own directory, under the ow
 An RFC-4 client needs an **author feed** on the user's domain. With PUPS:
 
 1. The user enters their domain. The client discovers PUPS and asks for `write:/appdata/<client-host>/`. That is a one-click grant, and the token response's `me` tells the client the user's domain.
-2. The client keeps the author feed in its own directory, e.g. `/appdata/app.example/comments.json` (JSON Feed) or `comments.xml` (RSS). RFC-4 allows one feed per target site, or one per comment, which keeps each file small.
+2. The client keeps the author feed in its own directory, e.g. `/appdata/app.example/comments.json` (JSON Feed) or `comments.xml` (RSS). RFC-4 allows one feed per target site, or one per comment, which keeps each file small. Alternatively, the client asks for `write:/feed.json` (with step-up confirmation) and adds the comments to the owner's [main feed](#the-list-of-well-known-paths), where the owner's readers see them too.
 3. For each comment, the client adds the item with `inReplyTo` and, on the feed, the socialspec account `@tim.example.com`, then writes the feed with `If-Match` (or `If-None-Match: *` for a new feed).
 4. It sends the webmention with `source` = the feed's **public URL** + `#guid`.
 5. To edit, it changes the item and resends the webmention; to delete, it removes the item (or the feed file) and resends it.
@@ -681,7 +702,7 @@ A test runner takes a base URL and a test client with its own CIMD document, and
 
 ## Open questions
 
-- **Names and URIs.** The link relation `https://bigwide.net/ns/personal-storage`, the ownership property `https://bigwide.net/ns/pups#client`, the feed rel `https://bigwide.net/ns/feed` and the property `https://bigwide.net/ns/name` are placeholders, to be published on bigwide.net.
-- **The list of well-known paths.** Which files and directories may be declared, which rels and properties belong to each, which rels are single-valued, which property values are URLs, and how the consent screen describes them. SocialSpec's three files are the first candidates.
+- **Names and URIs.** The link relation `https://bigwide.net/ns/personal-storage`, the ownership property `https://bigwide.net/ns/pups#client` and the property `https://bigwide.net/ns/name` are placeholders, to be published on bigwide.net.
+- **The list of well-known paths.** This RFC defines the initial list. Open: its home on bigwide.net, how new entries are proposed and accepted, and which link relations future entries bring.
 - **Sender-constrained tokens.** Should a later version support [DPoP](https://www.rfc-editor.org/rfc/rfc9449), so that a copied token is useless without the app's key?
 - **More types.** Are there file types that SocialSpec or feed apps need beyond the allowlist (e.g. `.ics` calendars, `.pdf`)?
