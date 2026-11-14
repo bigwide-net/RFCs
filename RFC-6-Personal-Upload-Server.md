@@ -33,7 +33,7 @@ The new parts are the configuration document, the scope syntax, the rules for pa
 - An app needs nothing but the user's domain: no pre-registration, no API key, no app-specific setup by the owner.
 - Least privilege: an app writes only its own directory, plus the specific well-known files the owner approved one by one.
 - Safe on ordinary web hosting: uploaded files can never execute on the server or run script with the owner's origin in a browser.
-- Works from browser apps (CORS), native apps (loopback redirects) and server-side apps alike.
+- Works from browser apps (CORS), native apps and browser apps in local development (loopback redirects), and server-side apps alike.
 - Installable on cheap shared hosting with nothing but PHP and SQLite, and with one click on Cloudflare.
 
 **Non-goals**
@@ -159,7 +159,7 @@ Apps are identified by **Client ID Metadata Documents** ([draft-ietf-oauth-clien
 - The app's identity is the **client host**, the host of `client_id`: it is the only thing about the app the server has verified, by fetching the document from there. The consent screen shows it, never a host taken from the document.
 - `client_uri` and `logo_uri`, if present, must be on the client host itself, optionally with or without a leading `www.`: with `client_id` on `app.example.com`, both `https://app.example.com/` and `https://www.app.example.com/` are fine, and with `client_id` on `www.app.example.com`, so is `https://app.example.com/`. Any other host, including a parent domain or another subdomain, is rejected. A parent domain may belong to someone else: a client on `alice.github.io` could otherwise name `https://github.io/` and show GitHub's logo, and nobody would notice the subdomain. An app that wants its main domain on the consent screen hosts its client metadata document there.
 - Every app publishes its own document on its own domain. A `client_id` hosted on someone else's domain is not that app's identity, and the consent screen would show the wrong domain.
-- `redirect_uris` are compared to the request by exact string match. Native apps may list loopback redirects (`http://127.0.0.1/callback` or `http://[::1]/callback`); the port is ignored when comparing, per [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252#section-7.3). `localhost` is not accepted.
+- `redirect_uris` are compared to the request by exact string match. Any app may list loopback redirects (`http://127.0.0.1/callback` or `http://[::1]/callback`); the port is ignored when comparing, per [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252#section-7.3). `localhost` is not accepted. Loopback redirects serve native apps, which listen on a local port, and the development of browser apps, which run on a local web server. The server can't tell the two apart and doesn't try: in both cases the code is delivered to the owner's own computer, and PKCE makes sure that only the app that started the flow can redeem it.
 - The server fetches the document during authorization and may cache it, following HTTP cache headers, for at most 24 hours. The fetch is security-sensitive; see [CIMD fetch](#cimd-fetch-ssrf).
 - The **client host** is the host of `client_id`. It names the app's own directory, `/appdata/<client-host>/`. Apps on the same host share it: they are the same party.
 
@@ -193,6 +193,7 @@ The owner authenticates (see [Owner authentication](#owner-authentication)) and 
 
 - **The app's real domain in large type**, the client host. `client_name` and the logo are self-declared, and the screen makes that clear by showing them smaller and next to the domain.
 - A **"new app"** notice if this `client_id` has never been approved before.
+- A note that **the app runs on this computer** if the redirect URI is a loopback address.
 - A line saying that **the app will learn the owner's domain**. With `identify` alone the whole screen reads "Sign in to app.example as tim.example.com".
 - Each scope in plain words: "its own data (`/appdata/app.example/`)", "create, replace and delete files under `/feeds/bigwide/`", "replace your SocialSpec profile (`/.well-known/about.md`)". **Every scope outside the app's own directory is visibly marked** and needs step-up confirmation.
 - A checkbox per scope, so the owner can drop individual scopes, and Approve / Deny.
@@ -257,6 +258,8 @@ Each entry is an object:
 | `rels` | The link relations apps may register in `host-meta.json` for files under this path. Default: none. |
 | `properties` | The top-level `host-meta.json` properties apps with this scope may set. Default: none. |
 
+**Server-side rules from the list.** For each entry, the list of well-known paths (see below) also says which of its `rels` are **single-valued**, so that an existing link is never replaced (see [Links](#links)), and which of its `properties` take a **URL** as their value (see [Properties](#properties)). Only the server applies these rules, so they are not part of the configuration document: the server takes them from the list. An implementation may let the owner configure them along with the declared paths.
+
 Rules:
 
 - A server declares only paths it can actually serve with the required headers (see [Serving files](#serving-files)), and only paths defined by a published spec. **A list of well-known paths will be maintained on bigwide.net** (open question). The owner may remove entries.
@@ -300,7 +303,21 @@ grant_type=authorization_code&code=…&client_id=…&redirect_uri=…&code_verif
 
 ### Refresh
 
-`grant_type=refresh_token&refresh_token=…&client_id=…` returns a new access token and a **new refresh token**; the old one is invalid from then on. Refresh tokens live 180 days. **Reusing a refresh token that has already been replaced revokes the whole grant**, because it means that the token was copied. The app's scope can't grow through a refresh.
+`grant_type=refresh_token&refresh_token=…&client_id=…` returns a new access token and a **new refresh token**, which replaces the old one. Refresh tokens live 180 days. The app's scope can't grow through a refresh.
+
+**Reuse detection.** **Using a refresh token that has already been replaced revokes the whole grant**, because it means that the token was copied. The only exception is the grace period below.
+
+**Grace period.** A refresh response can get lost: the server has rotated the token, but the connection dropped before the app received the new one. With strict reuse detection, the app's retry would revoke the grant. Therefore the replaced refresh token stays usable for a short **grace period** after the refresh, as long as nothing issued by that refresh has been used, neither the new refresh token nor the new access token.
+
+- The grace period is at least 60 seconds and at most 5 minutes. Apps rely on 60 seconds only.
+- A refresh with the replaced token during the grace period succeeds and returns a fresh pair. The unused tokens of the earlier refresh are revoked. Requests with them fail as with any revoked token (`invalid_grant` at the token endpoint, `401` at the upload API), but don't revoke the grant.
+- Once a token issued by the refresh has been used, or the grace period has ended, using the replaced token revokes the whole grant, as above.
+
+The grace period keeps reuse detection effective. A thief who refreshes with a copied token either uses the result, and the app's next refresh with the same token revokes the grant, or doesn't use it right away, and the app's refresh within the grace period revokes the thief's tokens. What it costs is a short window in which a refresh token whose successor is still unused can be redeemed twice.
+
+The server records for each grant the current refresh token, the token it replaced, when it was replaced, and whether anything issued by the replacement has been used.
+
+**Apps refresh one at a time.** The grace period is for retrying a lost response, not for concurrency. An app that refreshes from several places at once, e.g. several browser tabs, makes each refresh revoke the tokens of the one before, and revokes the grant as soon as one of them has been used. Such apps must serialize refreshes and share the result. An app that loses a refresh response retries promptly with the same refresh token, within 60 seconds.
 
 ### Revocation
 
@@ -340,6 +357,8 @@ The path is percent-decoded once and must be valid UTF-8. It is rejected with `4
 - a segment ends with `.` or a space (Windows hosts strip them, turning `feed.php.` into `feed.php`).
 
 The server normalizes the path first and checks the scope on the normalized path only, comparing segment by segment. A path outside every granted scope gets `403`. The server must not follow symbolic links out of its storage.
+
+**Dot segments in the request URL.** HTTP clients, CDNs and server runtimes often resolve `.` and `..` segments in a request URL, also in the form `%2e`, before the request reaches the server, as the [WHATWG URL standard](https://url.spec.whatwg.org/#path-state) requires. In that case, the server never sees the dot segments. It treats the request as a request for the resolved path, applies the rules and the scope check to that path, and answers accordingly, typically with `403` when the resolved path is outside the scope. That is safe, because the scope check always applies to the path that is actually written. The `400` rule applies whenever the server does receive a dot segment, in particular in the `path` parameter of the [POST fallback](#post-fallback), which nothing resolves on the way.
 
 ### Errors
 
@@ -487,7 +506,7 @@ Responses: `201` added or set, `204` removed, `400` invalid request, `403` outsi
 - **Ownership marker.** Every link PUPS adds carries `"properties": {"https://bigwide.net/ns/pups#client": "<client_id>"}`. Links without it belong to the owner and are never changed or removed by PUPS.
 - **Own files only.** `href` must be the public URL of a file inside the app's granted scope. An app can never point the owner's links to another domain or to another app's files.
 - **Allowed rels.** For a file under a well-known path, only the `rels` declared for that path. For a file in `/appdata/`, only URI rels on the client host, with or without `www.` (`https://app.example/rel/…`). Nobody can register the PUPS rel itself or identity rels such as WebFinger's `http://webfinger.net/rel/profile-page`, `me`, `authorization_endpoint` or `openid`.
-- **Conflicts.** For rels that their spec defines as single-valued, an existing link (the owner's or another app's) is not replaced; the request gets `409`.
+- **Conflicts.** For rels that the list of well-known paths defines as single-valued, an existing link (the owner's or another app's) is not replaced; the request gets `409`.
 - **Limits.** At most 1,000 links in the file and 10 `/appdata/` links per app.
 
 ### Properties
@@ -496,7 +515,7 @@ Top-level `properties` in `host-meta.json` ([RFC 6415](https://www.rfc-editor.or
 
 - **Well-known only.** An app may set only the `properties` declared for a well-known path in `well_known_paths`, and only if it holds that path's scope. There are no app-specific properties: an app that needs more, or structured data, writes its own file and links to it. Nobody can set PUPS's own properties (`https://bigwide.net/ns/pups#…`) or properties that name the domain's identity or its OAuth server.
 - **No owner.** Properties are shared by the owner and every app that holds the scope. Any of them may set or replace the value; the last write wins. Apps can't remove properties; only the owner can. PUPS doesn't track who set a property.
-- **Values.** A string of at most 2,048 characters, without control characters. Setting `null` or an empty string is not possible. If the spec that defines a property says its value is a URL, it must be the public URL of a file inside the app's granted scope, as for link `href`s.
+- **Values.** A string of at most 2,048 characters, without control characters. Setting `null` or an empty string is not possible. If the list of well-known paths says that a property's value is a URL, it must be the public URL of a file inside the app's granted scope, as for link `href`s.
 
 ### Consent and lifecycle
 
@@ -545,11 +564,11 @@ PUPS hands write access to the domain that is the owner's identity to third-part
 
 ### Transport and OAuth
 
-- **HTTPS only.** The server refuses to run, or to issue tokens, over plain HTTP. Only loopback redirect URIs of native apps use `http`. HSTS is recommended.
+- **HTTPS only.** The server refuses to run, or to issue tokens, over plain HTTP. Only loopback redirect URIs use `http`. HSTS is recommended.
 - **PKCE S256 only.** `plain` and requests without `code_challenge` are rejected.
 - **Exact redirect URIs** from the CIMD document; only the port of loopback redirects may vary. Invalid clients or redirect URIs get an error page, never a redirect.
 - **Codes**: single-use, 60 seconds; a reused code revokes every token issued from it.
-- **Refresh tokens**: rotated on every use; reuse of a replaced token revokes the whole grant.
+- **Refresh tokens**: rotated on every use; reuse of a replaced token revokes the whole grant, except during the grace period of 60 seconds to 5 minutes, and only while nothing issued by the replacement has been used.
 - **Issuer identification**: `iss` in every authorization response; apps compare it with the discovered issuer before redeeming the code.
 - **Tokens**: at least 256 bits from a cryptographically secure random generator; only SHA-256 hashes are stored; compared in constant time; never logged, never in URLs.
 - **No token passing.** Access tokens are for this server only. Apps must not accept tokens as proof of identity.
@@ -647,8 +666,10 @@ A test runner takes a base URL and a test client with its own CIMD document, and
 - Rejected: wrong `code_verifier`, `plain` PKCE, missing PKCE, reused code (and revocation of its tokens), expired code, `redirect_uri` not in the CIMD document, `client_id` mismatch, `client_uri` or `logo_uri` on another host than the client host (a parent domain, another subdomain; only a `www.` difference is allowed), a `client_id` resolving to a private address.
 - Scopes: another app's directory, `write:/`, undeclared paths → `invalid_scope`; narrowed grants are enforced.
 - Refresh rotation and reuse detection; revoked grants fail immediately.
+- Refresh grace: reusing a replaced refresh token within 60 seconds, before anything issued by the replacement was used, succeeds, and the unused tokens of the earlier refresh are then rejected without revoking the grant; reuse after the replacement's refresh or access token was used, or after the grace period, revokes the grant.
+- A loopback redirect URI listed in the CIMD document is accepted with any port; `localhost` is not.
 - Uploads: inside scope succeeds, outside → `403`, no or expired token → `401`; `If-None-Match: *` on an existing file → `412`; stale `If-Match` → `412`; fresh `If-Match` → `200` with a new ETag.
-- Paths: `..`, `%2e%2e`, backslashes, dotfiles, trailing dots → `400`; a declared `/.well-known/` file is writable, an undeclared one and `host-meta.json` are not.
+- Paths: `..`, `%2e%2e`, backslashes, dotfiles, trailing dots → `400`. Dot segments are tested through the `path` parameter of `post_endpoint` when it is declared; sent in the URL, they may be resolved on the way (see [Paths](#paths)), so the test accepts either `400` or the answer for the resolved path, but never a write outside the scope; a declared `/.well-known/` file is writable, an undeclared one and `host-meta.json` are not.
 - Types: `.php`, `.phtml`, `feed.php.json`, `.htaccess`, HTML, JavaScript, CSS, a mismatched `Content-Type` → `415`, nothing stored; oversized uploads → `413`, nothing stored.
 - Serving: every uploaded file has the type of its extension, `nosniff`, `sandbox` and CORS headers; `Service-Worker: script` → `403`.
 - CORS on preflights and on every response, including errors.
@@ -662,6 +683,5 @@ A test runner takes a base URL and a test client with its own CIMD document, and
 
 - **Names and URIs.** The link relation `https://bigwide.net/ns/personal-storage`, the ownership property `https://bigwide.net/ns/pups#client`, the feed rel `https://bigwide.net/ns/feed` and the property `https://bigwide.net/ns/name` are placeholders, to be published on bigwide.net.
 - **The list of well-known paths.** Which files and directories may be declared, which rels and properties belong to each, which rels are single-valued, which property values are URLs, and how the consent screen describes them. SocialSpec's three files are the first candidates.
-- **Refresh token grace.** Strict reuse detection can lock out an app that lost the response to a refresh. Some OAuth libraries keep the previous refresh token valid until the new one is used. Should the spec allow that, at the cost of weaker reuse detection?
 - **Sender-constrained tokens.** Should a later version support [DPoP](https://www.rfc-editor.org/rfc/rfc9449), so that a copied token is useless without the app's key?
 - **More types.** Are there file types that SocialSpec or feed apps need beyond the allowlist (e.g. `.ics` calendars, `.pdf`)?
