@@ -205,6 +205,17 @@ An author feed only needs to be on the author's domain (see [Authorship](#author
 
 `source` is the author feed's URL plus `#` and the item's guid (RSS `<guid>`, JSON `id`), percent-encoded where needed. If the feed has exactly one item, the fragment may be left out. The server fetches the feed, not an HTML page, and finds the item by its guid.
 
+### Archived items
+
+Feeds that keep only their newest items often move older ones into archive pages. The item that `source` names may therefore no longer be in the feed at that URL, but in a page linked from it. (Authors can avoid this by using the URL of a page the item never leaves as `source`, as [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md) does with its archives.) `source` doesn't change when that happens: it always names the feed the item was published in.
+
+- If the item is not in the fetched feed, the server follows the feed's pagination and looks for the guid there: `next_url` in JSON Feed, `<atom:link rel="next">` ([RFC 5005](https://www.rfc-editor.org/rfc/rfc5005)) in RSS. It goes on from page to page until it finds the item or reaches the end.
+- It follows only pages on the same host as `source`, never one it has seen already, and fetches each with the same limits as the author feed.
+- The server is free to give up after a limit of its choice, e.g. a number of pages or an amount of time. Servers should follow at least 10 pages.
+- **Giving up is not a delete.** If the server gives up before it reaches the end of the chain, it treats the item as not found (`item-not-found`), never as deleted (see [Edits and deletes](#edits-and-deletes)).
+
+In practice this rarely matters: a webmention is sent right after the item is published, when it is at the top of the feed. It matters for edits and deletes of older items.
+
 ### Target and `inReplyTo`
 
 Posts and comments are referenced by **the feed that contains them plus `#guid`**. This works for items that have no page of their own and makes the containing feed easy to find.
@@ -275,7 +286,7 @@ Status pages are short-lived: rssmention keeps them for at least an hour. Client
 The server remembers which source became which guid. Sending a webmention for the same `source` again:
 
 - **updates** the republished item if `allowEdit` is set. The target must stay the same; the item keeps its guid and publication date, and gets a `date_modified`.
-- **deletes** it, together with all replies, if `allowDelete` is set and the author feed answers 404 or 410, or no longer contains the item.
+- **deletes** it, together with all replies, if `allowDelete` is set and the author feed answers 404 or 410, or no longer contains the item: neither the feed nor any of the pages linked from it (see [Archived items](#archived-items)). A server that gave up before the end of the chain doesn't delete.
 - is rejected with `400` if neither is set.
 
 ## Mapping between RSS and JSON Feed
@@ -313,7 +324,7 @@ Fields used from RFC-1 and the source namespace:
 **Clients**
 
 - Read the rules before the author starts writing. Offer only the enabled features and enforce the limits in the editor (see RFC-5). Show the terms of service, and that the comment will be published, in full or as an abstract, if `republish` is `full` or `summary`.
-- Write `inReplyTo` exactly as the target, and keep the item in the author feed. If it drops out of the feed and the server allows deletes, the next webmention for it deletes the comment.
+- Write `inReplyTo` exactly as the target, and keep the item in the author feed or in a page linked from it with `next_url` (`<atom:link rel="next">` in RSS). If it drops out of both and the server allows deletes, the next webmention for it deletes the comment.
 - Fetch target and comment feeds directly, when the user opens or refreshes a thread, not through a server-side feed reader that refreshes them every hour.
 - Poll the status page with a growing interval, and stop after a few minutes. A `waiting` status that never changes means the server restarted; resubmit.
 

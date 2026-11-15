@@ -106,8 +106,7 @@ The `href` points to the configuration document. Its path is chosen by the serve
     { "path": "/.well-known/about.md", "url": "https://tim.example.com/.well-known/about.md", "properties": ["https://bigwide.net/ns/name"] },
     { "path": "/.well-known/contact.vcf", "url": "https://tim.example.com/.well-known/contact.vcf" },
     { "path": "/feed.json", "url": "https://tim.example.com/feed.json", "rels": ["https://bigwide.net/ns/feed"] },
-    { "path": "/feed/", "url": "https://tim.example.com/feed/" },
-    { "path": "/feeds/", "url": "https://tim.example.com/feeds/", "rels": ["https://bigwide.net/ns/feed"] }
+    { "path": "/feed/", "url": "https://tim.example.com/feed/", "rels": ["https://bigwide.net/ns/feed"] }
   ],
   "host_meta_endpoint": "https://tim.example.com/pups/host-meta",
   "max_upload_bytes": 26214400,
@@ -280,18 +279,17 @@ A server may declare the following paths. All of them live at the domain root, s
 | `/.well-known/about.md` | The owner's profile | [AboutSpec](https://aboutspec.org) | your profile | — | `https://bigwide.net/ns/name` |
 | `/.well-known/contact.vcf` | The owner's contact details | [ContactSpec](https://contactspec.org) | your contact details | — | — |
 | `/feed.json` | The owner's main feed | this RFC, [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md) | your feed | `https://bigwide.net/ns/feed` | — |
-| `/feed/` | The files of the main feed | this RFC, RFC-7 | the files of your feed | — | — |
-| `/feeds/` | The owner's other feeds and their files | RFC-7 | your feeds | `https://bigwide.net/ns/feed` | — |
+| `/feed/` | The files of the main feed, and the owner's other feeds | this RFC, RFC-7 | the files of your feed, and your other feeds | `https://bigwide.net/ns/feed` | — |
 
-The link relation `https://bigwide.net/ns/feed` registers a feed in `host-meta.json` (see [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#registering-feeds-in-host-metajson)). It is not single-valued: a domain can have several feeds. No property takes a URL. The consent screen describes a scope for a listed path with the text from the table, e.g. "create, replace and delete your feed (`/feed.json`)". A scope for a directory inside `/feed/` is described by its path, and so is a scope inside `/feeds/`, e.g. "create, replace and delete `/feeds/photos.json`".
+The link relation `https://bigwide.net/ns/feed` registers a feed in `host-meta.json` (see [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#registering-feeds-in-host-metajson)). It is not single-valued: a domain can have several feeds. No property takes a URL. The consent screen describes a scope for a listed path with the text from the table, e.g. "create, replace and delete your feed (`/feed.json`)". A scope inside `/feed/` is described by its path, e.g. "create, replace and delete `/feed/photos.json`".
 
 **`/feed.json`** is the owner's main feed: a [JSON Feed 1.1](https://www.jsonfeed.org/version/1.1/) document, with the extensions of the bigwide.net RFCs where they are used, e.g. [RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md) sources and [RFC-3](https://github.com/bigwide-net/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md) podcasting. Readers and apps find it on the domain without any discovery, and it can serve as the author feed of [RFC-4](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) comments. Its `feed_url` is `https://<owner host>/feed.json`. Like every `.json` file, it is served as `application/json`.
 
-**`/feed/`** holds the files that belong to the main feed: images and other media that its items reference, such as RFC-3 podcast episodes, and further JSON Feed documents that it points to, such as older pages linked with `next_url`. Apps organize the directory as they like, within the file-type allowlist and the conventions of RFC-7. They store nothing there that the main feed doesn't use, directly or through another file in `/feed/`.
+**`/feed/`** holds the files that belong to the main feed: images and other media that its items reference, such as RFC-3 podcast episodes, and further JSON Feed documents that it points to, such as older pages linked with `next_url`. Its media go into `/feed/images/` and `/feed/media/`, its icons into `/feed/images/icons/`, within the file-type allowlist. Apps store nothing in `/feed/` that a feed doesn't use, and follow the layout of RFC-7.
 
 Several apps may write the main feed. [Feed Publishing with PUPS (RFC-7)](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md) defines the conventions they follow: how the feed is set up, which fields belong to whom, how items are posted, edited and deleted, and how older items move into archives in `/feed/`. All writes use `If-Match` (see [Concurrency](#concurrency)).
 
-**`/feeds/`** holds the owner's other feeds, each with a name: the feed `photos` is `/feeds/photos.json`, and its files are in `/feeds/photos/`. Apps usually ask for the scopes of one feed, `write:/feeds/photos.json write:/feeds/photos/`, and only apps that manage all of the owner's feeds for `write:/feeds/`. RFC-7 defines the layout and the conventions, which are the same as for the main feed.
+`/feed/` also holds the owner's other feeds, each with a name: the feed `photos` is `/feed/photos.json`, and its files are in `/feed/photos/`. An app that writes only such a feed asks for its scopes, `write:/feed/photos.json write:/feed/photos/`. The main feed's scope `write:/feed/` covers all of them. RFC-7 defines the layout and the conventions, which are the same as for the main feed.
 
 ### Public URLs
 
@@ -406,8 +404,8 @@ Errors follow RFC 6750 and carry a JSON body `{"error": "<code>", "message": "<t
 Shared hosts behind a web application firewall often block `PUT` and `DELETE`. Such a server declares `post_endpoint` in its configuration document, and clients must then send every write there:
 
 ```
-POST <post_endpoint>?method=PUT&path=%2Ffeeds%2Fbigwide%2Ffeed.xml
-POST <post_endpoint>?method=DELETE&path=%2Ffeeds%2Fbigwide%2Fold.xml
+POST <post_endpoint>?method=PUT&path=%2Ffeed%2Fimages%2F2026%2Fsunset.jpg
+POST <post_endpoint>?method=DELETE&path=%2Ffeed%2Fimages%2F2026%2Fold.jpg
 ```
 
 - `method` is `PUT` or `DELETE`; `path` is the path relative to `storage_base`, percent-encoded.

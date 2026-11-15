@@ -6,16 +6,16 @@ Latest version on GitHub: [RFC-7-Feed-Publishing-with-PUPS.md](https://github.co
 
 ## Summary
 
-This proposal describes how apps maintain a blog feed, or any similar stream of posts, on the owner's domain through a [Personal Upload Server (PUPS, RFC-6)](https://github.com/bigwide-net/RFCs/blob/main/RFC-6-Personal-Upload-Server.md). It defines no new protocol, and only one small extension, `_pups`. It is a list of conventions for clients: how to set up a feed, which fields they may change, how to post, edit and delete items, how to move older items into archive feeds, and how to register feeds in `host-meta.json`, so that several apps can share a feed without breaking it.
+This proposal describes how apps maintain a blog feed, or any similar stream of posts, on the owner's domain through a [Personal Upload Server (PUPS, RFC-6)](https://github.com/bigwide-net/RFCs/blob/main/RFC-6-Personal-Upload-Server.md). It defines no new protocol, and only one small extension, `_pups`. It is a list of conventions for clients: how to set up a feed, which fields they may change, how to post, edit and delete items, how to keep every item in archive feeds, and how to register feeds in `host-meta.json`, so that several apps can share a feed without breaking it.
 
 In short:
 
-- The owner's **main feed** is `/feed.json`, a [JSON Feed 1.1](https://www.jsonfeed.org/version/1.1/) document. Its media and archives live in `/feed/`. Further **named feeds** live in `/feeds/`: the feed `photos` is `/feeds/photos.json`, with its files in `/feeds/photos/`.
+- The owner's **main feed** is `/feed.json`, a [JSON Feed 1.1](https://www.jsonfeed.org/version/1.1/) document. Its media and archives live in `/feed/`. Further **named feeds** live in `/feed/` too: the feed `photos` is `/feed/photos.json`, with its files in `/feed/photos/`.
 - **JSON Feed only.** No RSS, no Atom. An owner who needs RSS needs a real CMS.
 - **Clients only write feeds marked as theirs.** Every file they create carries `"_pups": { "pupsControlled": true }`. A feed without it is never overwritten.
-- A client **posts** by adding an item to the top of the feed, with a read-modify-write cycle protected by ETags.
-- A feed should keep **20 to 30 items**. When it grows beyond its limit, the client moves the oldest 10 into an **archive feed**, `feed.000000.json`, `feed.000001.json` and so on, linked with `next_url`.
-- An item that needs a **permanent URL**, e.g. as the source of an RFC-4 webmention, is written into the archive it will end up in right away.
+- The **feed file** contains the **newest 30 items**. A client **posts** by adding the item at the top and dropping the oldest beyond 30. Every write is a read-modify-write cycle protected by ETags.
+- **Archives are optional.** A feed with archives keeps every item in exactly one archive, `feed.000000.json`, `feed.000001.json` and so on, with at most 20 items each, linked from the newest to the oldest with `next_url`. The feed file then holds copies of the newest 30 and points to the newest archive with `_pups.archive_url`; every archive points back with `_pups.updates_url`. Items never move between archives, so the archive's URL plus `#id` addresses an item forever.
+- **Simple clients don't need to support archives**, but they write only feeds without them.
 - Every feed is **registered in `host-meta.json`**, so apps and readers can find all of the owner's feeds.
 - How a feed becomes a web page is **out of scope**.
 
@@ -28,7 +28,8 @@ In short:
 - Any app that holds a feed's scopes can set up the feed, post to it, and edit or delete posts, without knowing which other apps write it.
 - An owner can have several feeds, e.g. a blog, a photo stream and a podcast, and apps can find them.
 - A feed that the owner maintains by other means is never touched.
-- Feeds stay small enough to fetch often, and older posts stay available in archives.
+- Feed files stay small enough to fetch often. With archives, every post stays available, at a URL that never changes.
+- A simple client can publish a feed without implementing archives.
 - Concurrent writes by several apps, or by the owner, never lose a post.
 - Nothing is needed on the server beyond PUPS.
 
@@ -49,24 +50,24 @@ In short:
 
 1. **Authorize.** The client discovers the owner's PUPS server and asks for the scopes of a feed, e.g. `write:/feed.json` and `write:/feed/` for the main feed.
 2. **Set up.** If the feed doesn't exist, the client asks the owner for a title and a description, creates it, and registers it in `host-meta.json`. If it exists, the client writes it only if it is marked with `_pups.pupsControlled`.
-3. **Post.** The client loads the feed, adds the new item at the top and writes it back with `If-Match`.
-4. **Archive.** If that makes the feed longer than its limit, the client first moves the oldest 10 items into the newest archive, or into a new one.
-5. **Edit and delete.** The client finds the item in the feed or along the archive chain, changes it and writes that file back.
+3. **Post.** The client adds the new item to the top of the feed file, which keeps the newest 30 items. If the feed has archives, it first adds the item to the newest archive, or starts a new archive if the newest is full.
+4. **Edit and delete.** The client changes the item in the feed file and, if the feed has archives, in the item's archive.
 
 ## Feeds and their files
 
-Every feed consists of a **feed file**, the JSON Feed that readers subscribe to, and a **feed directory**, which holds its archives, icons and media.
+Every feed consists of a **feed file**, the JSON Feed that readers subscribe to and poll, and a **feed directory**, which holds its archives, icons and media.
 
 | | Main feed | Named feed `photos` |
 | --- | --- | --- |
-| Feed file | `/feed.json` | `/feeds/photos.json` |
-| Feed directory | `/feed/` | `/feeds/photos/` |
-| Archives | `/feed/feed.000000.json`, … | `/feeds/photos/feed.000000.json`, … |
-| Icons | `/feed/images/icons/` | `/feeds/photos/images/icons/` |
-| `feed_url` | `https://<owner host>/feed.json` | `https://<owner host>/feeds/photos.json` |
-| Scopes | `write:/feed.json write:/feed/` | `write:/feeds/photos.json write:/feeds/photos/` |
+| Feed file | `/feed.json` | `/feed/photos.json` |
+| Feed directory | `/feed/` | `/feed/photos/` |
+| Archives | `/feed/feed.000000.json`, `/feed/feed.000001.json`, … | `/feed/photos/feed.000000.json`, … |
+| Icons | `/feed/images/icons/` | `/feed/photos/images/icons/` |
+| Media | `/feed/images/`, `/feed/media/` | anywhere in `/feed/photos/`, e.g. `/feed/photos/images/` |
+| `feed_url` | `https://<owner host>/feed.json` | `https://<owner host>/feed/photos.json` |
+| Scopes | `write:/feed.json write:/feed/` | `write:/feed/photos.json write:/feed/photos/` |
 
-`<owner host>` is the host of `me` from the token response. All rules in this document apply to every feed in the same way. Where the text says `/feed.json` and `/feed/`, read `/feeds/<name>.json` and `/feeds/<name>/` for a named feed.
+`<owner host>` is the host of `me` from the token response. All rules in this document apply to every feed in the same way. Where the text says `/feed.json` and `/feed/`, read `/feed/<name>.json` and `/feed/<name>/` for a named feed.
 
 ### The main feed
 
@@ -78,7 +79,8 @@ An owner who wants more than one feed, e.g. one for photos and one for a podcast
 
 - A name consists of 1 to 40 lowercase ASCII letters, digits and `-`, and doesn't start or end with `-`: `photos`, `podcast`, `notes-de`.
 - The owner chooses the name when the feed is created. The client may suggest one derived from the title. The name is part of every URL of the feed and its archives, so it never changes.
-- `/feeds/` itself holds only feed files, `/feeds/<name>.json`, and feed directories, `/feeds/<name>/`. Clients store nothing else there.
+- `images` and `media` are not available as names: in `/feed/`, they belong to the main feed.
+- **`/feed/` is shared** by the main feed and the named feeds. At its top level, it holds only the main feed's archives (`feed.<NNNNNN>.json`), the main feed's media directories `images/` and `media/`, and the named feeds' files `<name>.json` and directories `<name>/`. Clients store nothing else there.
 - A named feed's `home_page_url` is the domain's root too. Its title, not its name, is what readers show.
 
 ## Server requirements
@@ -88,18 +90,17 @@ The client needs a PUPS server whose configuration document declares the [well-k
 ```json
 "well_known_paths": [
   { "path": "/feed.json", "url": "https://tim.example.com/feed.json", "rels": ["https://bigwide.net/ns/feed"] },
-  { "path": "/feed/", "url": "https://tim.example.com/feed/" },
-  { "path": "/feeds/", "url": "https://tim.example.com/feeds/", "rels": ["https://bigwide.net/ns/feed"] }
+  { "path": "/feed/", "url": "https://tim.example.com/feed/", "rels": ["https://bigwide.net/ns/feed"] }
 ]
 ```
 
-- For the main feed, `/feed.json` and `/feed/`. For named feeds, `/feeds/`. Named feeds have no well-known paths of their own; they are files and directories inside `/feeds/`.
-- The client requests both scopes of a feed, its file and its directory, and needs both: without the directory it can neither upload media nor archive. If the owner grants only one of them, the client treats the grant as denied and tells the owner why.
-- A client that works with one named feed asks for that feed's scopes, `write:/feeds/photos.json write:/feeds/photos/`. Only a client that manages all of the owner's feeds, e.g. a blogging app with several blogs, should ask for `write:/feeds/`. A client with per-feed scopes that wants to create another feed runs a new authorization with the new feed's scopes.
+- For the main feed, `/feed.json` and `/feed/`. For named feeds, `/feed/` is enough: they have no well-known paths of their own, but are files and directories inside it. The `rels` of `/feed/` allow apps to register named feeds in `host-meta.json`.
+- The client requests both scopes of a feed, its file and its directory, and needs both: without the directory it can neither upload media nor write archives. If the owner grants only one of them, the client treats the grant as denied and tells the owner why.
+- A client that works with one named feed asks for that feed's scopes, `write:/feed/photos.json write:/feed/photos/`. The main feed's scopes include `write:/feed/`, and therefore every named feed as well: a client that writes the main feed can write all of the owner's feeds, and the consent screen should say so. A client with per-feed scopes that wants to create another feed runs a new authorization with the new feed's scopes.
 - If the server doesn't declare the paths, e.g. because the domain's website already serves a feed there, the client can't publish that feed. It tells the owner, and may offer to keep a feed in its own directory instead.
 - All feed scopes need step-up confirmation (RFC-6).
 
-The client reads files from `storage_base` and writes them there, as RFC-6 requires for ETags. It uses the **public URLs** (based on the `url` of the well-known entries) in everything it writes into a feed: `feed_url`, `next_url`, icons and media.
+The client reads files from `storage_base` and writes them there, as RFC-6 requires for ETags. It uses the **public URLs** (based on the `url` of the well-known entries) in everything it writes into a feed: `feed_url`, `next_url`, `archive_url`, `updates_url`, icons and media.
 
 ## The feed file
 
@@ -117,12 +118,12 @@ Some top-level fields are fixed or managed by the conventions in this document. 
 | `feed_url` | The feed file's public URL, e.g. `https://<owner host>/feed.json` | fixed |
 | `description` | What the feed is about. Recommended. | owner |
 | `user_comment` | A note that the feed is PUPS-controlled, see [below](#user_comment) | fixed |
-| `next_url` | The newest archive, see [Archives](#archives) | managed |
-| `icon`, `favicon` | Images in the feed directory's `images/icons/`, see [Icons](#icons) | owner |
+| `next_url` | Optional: the newest archive, like `archive_url`, see [Reading](#reading). Usually not set. | managed |
+| `icon`, `favicon` | Images in `/feed/images/icons/`, or `/feed/<name>/images/icons/` for a named feed, see [Icons](#icons) | owner |
 | `authors`, `language`, `expired` | As in JSON Feed | owner |
 | `hubs` | **Never set.** PUPS servers don't support WebSub yet. | — |
-| `items` | The newest items, newest first, see [Posting](#posting) | managed |
-| `_pups` | The PUPS marker, see [The `_pups` object](#the-_pups-object) | fixed |
+| `items` | The newest 30 items, newest first, see [Posting](#posting) | managed |
+| `_pups` | The PUPS marker, and, for a feed with archives, `archive_url`, the newest archive, see [The `_pups` object](#the-_pups-object) | managed |
 | other extensions | E.g. `_podcast` ([RFC-3](https://github.com/bigwide-net/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md)), `_source` ([RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md)) | owner |
 
 - **The home page is the domain.** A feed belongs to the domain, not to an app, so `home_page_url` is always the domain's root, never the client's website. What the domain shows there is up to the owner (see [Rendering](#rendering)).
@@ -131,39 +132,50 @@ Some top-level fields are fixed or managed by the conventions in this document. 
 
 ### The `_pups` object
 
-Every file that a client creates under this document, feed files and archives, carries a `_pups` object, following JSON Feed's [extension rules](https://www.jsonfeed.org/version/1.1/#extensions-a-name-extensions-a):
+Every file that a client creates under this document, feed files and archives, carries a `_pups` object, following JSON Feed's [extension rules](https://www.jsonfeed.org/version/1.1/#extensions-a-name-extensions-a). In the feed file:
 
 ```json
 "_pups": {
   "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md",
-  "pupsControlled": true
+  "pupsControlled": true,
+  "archive_url": "https://tim.example.com/feed/feed.000002.json"
+}
+```
+
+In an archive:
+
+```json
+"_pups": {
+  "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md",
+  "pupsControlled": true,
+  "updates_url": "https://tim.example.com/feed.json"
 }
 ```
 
 - `pupsControlled: true` says that the file is maintained by PUPS clients according to this document.
 - **A client never overwrites or deletes a feed file or an archive unless it carries `"pupsControlled": true`.** The only files a client writes without the marker are the ones it creates, with `If-None-Match: *`, and those get the marker.
-- Clients keep `_pups` unchanged when they write the file.
-- `about` should be this document. **This is not its final location**: the URL will change once the spec has a permanent home. Clients therefore ignore the value of `about` and look only at `pupsControlled`.
+- `archive_url`, in the feed file only, is the public URL of the newest archive. It is missing if the feed has no archives. See [Archives](#archives-optional).
+- `updates_url`, in archives only, is the public URL of the feed file. It tells readers which file to poll for new items, and lets a reader that found an archive, e.g. through an RFC-4 `source`, find the feed.
+- `about` should be this document. **This is not its final location**: the URL will change once the spec has a permanent home. Clients therefore ignore the value of `about`.
+- Clients keep the other fields of `_pups` unchanged, including fields they don't know.
 
 The marker protects feeds that the owner maintains by hand or with another tool: a client that finds such a feed leaves it alone (see [Setting up a feed](#setting-up-a-feed)). The owner hands a feed over to PUPS clients by adding the marker, and takes it back by removing it.
-
-Items may carry a `_pups` object too, with a single field, `archive`. See [Permanent URLs](#permanent-urls).
 
 ### `user_comment`
 
 `user_comment` tells people who open the file how it is maintained. Clients set it to:
 
-> This feed is maintained by apps through a Personal Upload Server (PUPS), following https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md. Older items are in the archive at next_url.
+> This feed is maintained by apps through a Personal Upload Server (PUPS), following https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md. It contains the newest items. If it has _pups.archive_url, all items are in the archives, starting with the one there.
 
 The text is for humans. Clients recognize a PUPS feed by `_pups`, never by this text.
 
 ### Icons
 
-`icon` (512 × 512 pixels) and `favicon` (64 × 64) are optional, chosen by the owner, and stored in `images/icons/` in the feed directory, e.g. `https://tim.example.com/feed/images/icons/icon-k3x9.png`.
+`icon` (512 × 512 pixels) and `favicon` (64 × 64) are optional and chosen by the owner. They are stored in `/feed/images/icons/` for the main feed, e.g. `https://tim.example.com/feed/images/icons/icon-k3x9.png`, and in `/feed/<name>/images/icons/` for a named feed, e.g. `https://tim.example.com/feed/photos/images/icons/icon-m2q7.png`.
 
 - The client lets the owner pick or upload the image. It may offer to crop or scale it, but doesn't create an icon on its own, e.g. from its own logo.
 - Every new image gets a **new file name**, so that readers and caches that keep the old URL never show a stale image under a new name. After the feed has been written with the new URL, the client deletes the old file.
-- Only icons go into `images/icons/`. Clients don't store anything else there.
+- Only icons go into these directories. Clients don't store anything else there.
 
 ## Setting up a feed
 
@@ -177,27 +189,26 @@ After authorization, the client `GET`s the feed file from `storage_base`.
 
 It may offer advanced options, but should hide them by default: for a podcast, `_podcast.blocks` (`podcast:block`, to keep the feed out of podcast directories), `explicit`, `medium`, `locked` and the show's `guid`; for RFC-4, the owner's SocialSpec account in `_source.accounts`. The client says clearly that the feed is public.
 
-It then writes the feed with the fixed fields from the table above, including `_pups`, an empty `items` array or the first post, and `If-None-Match: *`. If that fails with `412`, someone else has created a feed under that name in the meantime; the client loads it and continues as below, or, for a named feed, asks the owner for another name. Finally, it [registers the feed](#registering-feeds-in-host-metajson) in `host-meta.json`.
+It then writes the feed with the fixed fields from the table above, including `_pups`, an empty `items` array and no archive, with `If-None-Match: *`. A client that supports archives may start them with the first post. If that fails with `412`, someone else has created a feed under that name in the meantime; the client loads it and continues as below, or, for a named feed, asks the owner for another name. Finally, it [registers the feed](#registering-feeds-in-host-metajson) in `host-meta.json`.
 
 **`200`: the feed exists.** The client checks that the file is a JSON Feed (a `version` starting with `https://jsonfeed.org/version/1`) and that it carries `"pupsControlled": true`. If either is missing, **the client never writes the file**. It tells the owner that the feed is maintained by other means, and that they can hand it over to PUPS clients as described below. A JSON Feed 1.0 file with the marker is upgraded to 1.1 when it is next written (`author` becomes `authors`).
 
 **Handing over an existing feed.** An owner who wants PUPS clients to take over a feed that was made by hand or by another tool adds the `_pups` object to it, e.g. with a text editor. A client may show the owner the exact lines to add, but never adds them itself. From then on, the feed is treated like any other:
 
 - The first client that writes it sets the fixed fields (`home_page_url`, `feed_url`, `user_comment`) to their values, and registers the feed if it isn't registered yet.
-- A file with more items than the limit is brought down to size gradually, 10 items per post, as described in [Posting](#posting).
-- An existing `next_url` is kept and becomes the end of the archive chain. The archives it points to are not PUPS archives and are never written, unless the owner marks them too.
+- A client that supports archives may [start the archives](#starting-the-archives) with the items the feed already has. An existing `next_url` then moves to the oldest new archive and becomes the end of the archive chain. The pages it points to are not PUPS archives and are never written, unless the owner marks them too.
 
 ## Registering feeds in host-meta.json
 
 PUPS has no directory listing, so there is no other way to learn which feeds a domain has. Every feed should therefore be registered in the domain's `host-meta.json`, with the link relation `https://bigwide.net/ns/feed`, through PUPS's [host-meta endpoint](https://github.com/bigwide-net/RFCs/blob/main/RFC-6-Personal-Upload-Server.md#editing-host-metajson):
 
 ```json
-{ "action": "add", "rel": "https://bigwide.net/ns/feed", "href": "https://tim.example.com/feeds/photos.json", "type": "application/feed+json" }
+{ "action": "add", "rel": "https://bigwide.net/ns/feed", "href": "https://tim.example.com/feed/photos.json", "type": "application/feed+json" }
 ```
 
 - **When.** The client that creates a feed registers it right afterwards. This includes the main feed, although readers also find it at `/feed.json` without discovery.
 - **No duplicates.** Before it registers a feed, the client reads `host-meta.json` and skips the request if a link with this relation and `href` exists already, e.g. because the owner added it by hand.
-- **Only feed files.** `href` is always a feed file, `/feed.json` or `/feeds/<name>.json`, never an archive or another file in a feed directory.
+- **Only feed files.** `href` is always a feed file, `/feed.json` or `/feed/<name>.json`, never an archive or another file in a feed directory.
 - **Without the endpoint.** If the configuration document has no `host_meta_endpoint`, the client tells the owner which link to add to `host-meta.json` by hand.
 - **Finding feeds.** A client that wants to post to one of the owner's existing feeds reads the links with this relation from `host-meta.json`, fetches each feed for its title, and lets the owner choose. It still checks `_pups.pupsControlled` before writing.
 
@@ -212,7 +223,7 @@ PUPS has no directory listing, so there is no other way to learn which feeds a d
       "properties": { "https://bigwide.net/ns/pups#client": "https://app.example/oauth/client.json" }
     },
     {
-      "rel": "https://bigwide.net/ns/feed", "type": "application/feed+json", "href": "https://tim.example.com/feeds/photos.json",
+      "rel": "https://bigwide.net/ns/feed", "type": "application/feed+json", "href": "https://tim.example.com/feed/photos.json",
       "properties": { "https://bigwide.net/ns/pups#client": "https://photos.example/oauth/client.json" }
     }
   ]
@@ -233,115 +244,107 @@ Archives keep the feed fields they were created with. A client may update them a
 
 An item is a JSON Feed 1.1 item. The conventions:
 
-- **`id`** is unique across the feed and all its archives, and **never changes**, also not when the item moves into an archive. Clients should use a random string of at least 16 characters from `A–Z`, `a–z`, `0–9`, `-` and `_`, e.g. `p-8f2kQ9xLm4Tz7wRb`, so that the id can be used in a URL fragment without encoding (RFC-4 references items as feed URL + `#id`).
+- **`id`** is unique across the feed and all its archives, and **never changes**. Clients should use a random string of at least 16 characters from `A–Z`, `a–z`, `0–9`, `-` and `_`, e.g. `p-8f2kQ9xLm4Tz7wRb`, so that the id can be used in a URL fragment without encoding (an item's URL is the URL of its file + `#id`).
 - **`date_published`** is always set. `date_modified` is set whenever the item is edited.
 - **Content.** JSON Feed requires `content_html` or `content_text`. For `content_html`, clients should consider [Feed HTML (RFC-2)](https://github.com/bigwide-net/RFCs/blob/main/RFC-2-HTML-Subset-for-Feed-Content.md): HTML within that subset looks the same in every reader that supports it, anything beyond it may be dropped. Markdown is an alternative: the client writes the text as Markdown in `_source.markdown` ([RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md#item-markdown)), and the same text as `content_html` or `content_text` for readers that don't know the extension.
 - **`url`** is the item's web page. The client sets it only if it knows that the page exists, e.g. because the owner entered it; it never invents one. `external_url` can be used for link posts.
-- **Media** (images, podcast episodes, other attachments) go into the feed directory, under the PUPS file-type allowlist, and are referenced by their absolute public URL. Clients organize the directory as they like, except for the names reserved below; `images/` and `media/` are recommended. Like icons, media files get new names when they change, and are never overwritten.
-- **Order.** `items` is sorted newest first: a new item is inserted at index 0. Clients never reorder items, also not by `date_published`. Position decides what is archived.
-- **Who may change an item.** Any client may edit or delete any item, whichever client created it, but only when the owner asks it to. It keeps all fields of the item that it doesn't change. Moving an item into an archive doesn't change it, so every client archives every item.
+- **Media** (images, podcast episodes, other attachments) go into the feed directory, under the PUPS file-type allowlist, and are referenced by their absolute public URL. For the main feed, that means `/feed/images/` and `/feed/media/`, because everything else in `/feed/` belongs to the named feeds. A named feed's directory is organized as clients like, except for the names reserved below; `images/` and `media/` are recommended there too. Like icons, media files get new names when they change, and are never overwritten.
+- **Order.** `items` is sorted newest first, in the feed file and in every archive: a new item is inserted at index 0. Clients never reorder items, also not by `date_published`.
+- **Who may change an item.** Any client may edit or delete any item, whichever client created it, but only when the owner asks it to. It keeps all fields of the item that it doesn't change.
 
-**Reserved names in a feed directory**: the archive files `feed.<NNNNNN>.json`, and the directory `images/icons/`. Clients store nothing else under these names.
+**Reserved names in a feed directory**: the archive files `feed.<NNNNNN>.json`, and the directory `images/icons/`, i.e. `/feed/images/icons/` and `/feed/<name>/images/icons/`. Clients store nothing else under these names.
 
 ## Posting
 
 Posting is a read-modify-write of the feed file, with ETags so that concurrent writes by another client, or by the owner, are never lost ([RFC-6 Concurrency](https://github.com/bigwide-net/RFCs/blob/main/RFC-6-Personal-Upload-Server.md#concurrency)):
 
-1. `GET` the feed file from `storage_base` and remember its `ETag`. If it doesn't carry `"pupsControlled": true`, stop.
-2. Insert the new item at the top of `items`.
-3. If `items` now has **30 items or fewer**, `PUT` the file with `If-Match: "<etag>"`. Done.
-4. Otherwise, take the **oldest 10 items** (the last 10 in `items`) out of the feed and move them into an archive, as described in [Archives](#archives). This may change `next_url`.
-5. `PUT` the feed file with `If-Match: "<etag>"`.
+1. `GET` the feed file from `storage_base` and remember its `ETag`. If it doesn't carry `"pupsControlled": true`, stop. If it has `_pups.archive_url`, the feed has archives: post as described in [Posting with archives](#posting-with-archives), or, if the client doesn't support archives, stop and tell the owner.
+2. Insert the new item at the top of `items`, and drop the items beyond the newest 30. In a feed without archives, they are gone.
+3. `PUT` the feed file with `If-Match: "<etag>"`.
 
-If any write fails with `412`, the client starts again at step 1. It uploads the item's media files before step 1, so that the item never references a file that doesn't exist yet.
+If the write fails with `412`, the client starts again at step 1. It uploads the item's media files before step 1, so that the item never references a file that doesn't exist yet.
 
-**Target size.** The recommended target size is 20 to 30 items: the feed has at most 30 items, and archiving brings it back to about 20. It is not fixed. A client may use other limits, e.g. 50 and 40 for a feed with short posts, or let the owner configure them; this document uses 30 items and batches of 10 throughout. Clients that use different limits on the same feed don't break anything: each applies its own when it posts. A feed that is much larger than the limit, e.g. after a hand-over, shrinks by one batch per post.
+**Feed size.** The recommended size of the feed file is 30 items. It is not fixed: a client may use another size, e.g. 50 for a feed with short posts, or let the owner configure it. Clients that use different sizes on the same feed don't break anything; each applies its own when it writes the feed file.
 
-**Size in bytes (optional).** Items can be large, e.g. long posts with full HTML. A client may also move a batch when the feed file would be larger than a size limit it chooses, e.g. 256 KB, even though it has fewer items than its item limit. It still moves 10 items at a time, and never leaves fewer than 10 in the feed.
+**Size in bytes (optional).** Items can be large, e.g. long posts with full HTML. A client may keep fewer items in the feed file when it would otherwise be larger than a size limit it chooses, e.g. 256 KB, but keeps at least 10. Archives are not affected; they always hold 20 items.
 
-## Archives
+## Archives (optional)
 
-Archives hold the items that no longer fit into the feed file. They are JSON Feeds too, stored in the feed directory and linked into a chain with `next_url`, from the newest to the oldest:
+Archives keep every item of a feed, not only the newest 30. They are an optional feature: a simple client may publish feeds without them. **A feed has archives if its feed file has `_pups.archive_url`**, and then it keeps them.
+
+- **A client that doesn't support archives never writes the items of a feed with archives**: it doesn't post to it, and doesn't edit or delete its items, because the archives would then miss the post or keep an outdated copy. It may still change the feed's settings (see [Editing a feed](#editing-a-feed)), which live in the feed file only.
+- **A client that supports archives may start them** for a feed that has none, when it posts to it, e.g. because the owner turned archiving on (see [Starting the archives](#starting-the-archives)). From then on, only clients that support archives can write the feed's items.
+
+The archives hold **every item of the feed, each in exactly one archive**. They are JSON Feeds too, stored in the feed directory and linked into a chain with `next_url`, from the newest to the oldest. The feed file holds copies of the newest 30 items and points to the newest archive with `_pups.archive_url`:
 
 ```
-/feed.json  →  /feed/feed.000002.json  →  /feed/feed.000001.json  →  /feed/feed.000000.json
+/feed.json  ⇢  /feed/feed.000002.json  →  /feed/feed.000001.json  →  /feed/feed.000000.json
+   _pups.archive_url                  next_url                 next_url
 ```
 
-- **Names.** Archives are called `feed.<NNNNNN>.json`, with a six-digit number starting at `000000`. Each new archive gets the next number, so the newest archive has the highest one. The name is the same for every feed; the feed directory tells them apart: `/feeds/photos/feed.000000.json`.
-- **Links.** `next_url` of the feed file points to the newest archive. `next_url` of each archive points to the next older one. The oldest archive has no `next_url`, unless the chain continues into older archives of a feed that was handed over.
-- **Size.** An archive holds at most 30 items, like the feed file. Items are moved in batches of 10, so an archive normally fills up in three steps.
-- **Feed fields.** A new archive gets a copy of the top-level fields of the feed file, including `_pups`, with these exceptions: `user_comment` says that it is an archive, `next_url` points to the next older archive, `items` holds the moved items, and `_podcast.liveItems` is left out. `feed_url` stays the URL of the feed file, so a reader that subscribes to an archive by mistake ends up with the live feed.
+- **Names.** Archives are called `feed.<NNNNNN>.json`, with a six-digit number starting at `000000`. Each new archive gets the next number, so the newest archive has the highest one. The name is the same for every feed; the feed directory tells them apart: `/feed/photos/feed.000000.json`.
+- **Size.** An archive holds at most **20 items**. New items always go into the newest archive; when it holds 20, the next item starts a new one. Older archives only change when an item in them is edited or deleted.
+- **Items never move.** Once an item is in an archive, it stays there. Its URL, the archive's URL plus `#<id>`, therefore never changes, e.g. `https://tim.example.com/feed/feed.000002.json#p-8f2kQ9xLm4Tz7wRb`. Clients use it wherever an item must be referenced, e.g. as the `source` of an RFC-4 webmention.
+- **Links.** `next_url` of each archive points to the next older one. The oldest archive has no `next_url`, unless the chain continues into older pages of a feed that was handed over.
+- **Feed fields.** A new archive gets a copy of the top-level fields of the feed file, with these exceptions: `feed_url` is the archive's own URL, `user_comment` says that it is an archive, `next_url` points to the next older archive, `_pups` has `updates_url` instead of `archive_url`, `items` holds the archived items, and `_podcast.liveItems` is left out.
 - **Marker.** Like the feed file, an archive is written only if it carries `"pupsControlled": true`.
 
 The archive's `user_comment`:
 
-> This is an archive of https://tim.example.com/feed.json, maintained by apps through a Personal Upload Server (PUPS), following https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md. Newer items are in the feed at feed_url, older ones in the archive at next_url.
+> This is an archive of https://tim.example.com/feed.json, maintained by apps through a Personal Upload Server (PUPS), following https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md. New items appear in the feed at _pups.updates_url, older ones are in the archive at next_url.
 
-### Moving items into an archive
+### Posting with archives
 
-Step 4 of [Posting](#posting) moves a batch of items, the oldest 10, out of the feed file:
+In a feed with archives, a post writes two files, the newest archive and the feed file, each with a read-modify-write cycle protected by ETags:
 
-1. **Find the newest archive.** If `next_url` of the feed file names an archive file `feed.<N>.json` in the feed directory, `GET` it from `storage_base` and remember its `ETag`.
-2. **Add to it if it has room.** If the archive carries the marker and would have 30 items or fewer with the batch added, insert the batch at the top of its `items`, in the same order, and `PUT` it with `If-Match`. `next_url` of the feed file stays unchanged.
-3. **Otherwise create a new archive**, number `N + 1`, or `000000` if the feed file has no `next_url`, or one that doesn't name an archive file. Its `next_url` is the current `next_url` of the feed file, i.e. the archive before it, if there is one. `PUT` it with `If-None-Match: *`, and set `next_url` of the feed file to its public URL.
+1. `GET` the feed file from `storage_base` and remember its `ETag`. If it doesn't carry `"pupsControlled": true`, stop. If it has no `archive_url` and the client starts the archives now, [start the archives](#starting-the-archives) first.
+2. `GET` the newest archive, the one `archive_url` names, and remember its `ETag`.
+3. **Add the item to the archive.** If the archive holds fewer than 20 items, insert the item at the top of its `items` and `PUT` it with `If-Match`. Otherwise **start a new archive**: number `N + 1`, with the new item as its only item and `next_url` pointing to archive `N`. `PUT` it with `If-None-Match: *`, and set `archive_url` of the feed file to its URL.
+4. **Add the item to the feed file**, as in [Posting](#posting): insert it at the top of `items`, drop the items beyond the newest 30, and `PUT` the feed file with `If-Match`.
 
-**Pre-archived items.** An item in the batch that carries `_pups.archive` goes into that archive instead (see [Permanent URLs](#permanent-urls)). Normally that is the archive chosen above. If not, the client writes the item into its own archive as well, replacing the copy there, and doesn't count it towards the size of the other one.
+If any write fails with `412`, the client starts again at step 1.
 
-Then continue with step 5 of Posting, writing the feed file. The order matters: **archives are always written before the feed file**. If the client is interrupted between the writes, the items are in both files for a while, which is harmless, but they are never in neither.
+The order matters: **the archive is always written before the feed file**. The archives are the record of the feed; the feed file is a copy of its newest items. If the client is interrupted between the two writes, the item is in the archive but not yet in the feed file, which the next post repairs (see below), but it is never in the feed file without being archived.
 
-Example: `/feed.json` has 30 items and `next_url` → `feed.000001.json`, which holds 30 items. A new post makes 31. The client takes the oldest 10, finds no room in `feed.000001.json`, creates `feed.000002.json` with these 10 items and `next_url` → `feed.000001.json`, then writes `/feed.json` with 21 items and `next_url` → `feed.000002.json`.
+Example: the feed file has 30 items and `archive_url` → `feed.000001.json`, which holds 20. A new post doesn't fit, so the client creates `feed.000002.json` with the new item and `next_url` → `feed.000001.json`, then writes the feed file with the new item at the top, without its oldest item, and `archive_url` → `feed.000002.json`.
+
+### Starting the archives
+
+A feed without `archive_url` has no archives: a new feed, a feed that simple clients have written so far, or a feed the owner [handed over](#setting-up-a-feed). A client that supports archives and starts them does so when it posts, before step 2 of [Posting with archives](#posting-with-archives):
+
+1. It takes the items the feed file already has, if any, and splits them, from the oldest to the newest, into archives of 20: `feed.000000.json` gets the oldest 20, `feed.000001.json` the next 20, and so on. The newest archive may hold fewer. A feed without items gets no archive here; the post then creates `feed.000000.json` in step 3.
+2. It writes each archive with `If-None-Match: *`, from the oldest to the newest, each with `next_url` pointing to the one before. The oldest archive's `next_url` is the feed file's `next_url`, if it has one.
+3. It continues with step 2 of Posting with archives, with `archive_url` pointing to the newest of these archives, and removes `next_url` from the feed file when it writes it in step 4.
 
 ### Interrupted and concurrent writes
 
-Because a post may write several files, the client has to deal with writes that only half happened:
+Because a post to a feed with archives writes two files, the client has to deal with writes that only half happened:
 
-- **Duplicates.** When the client adds items to an archive, an item whose `id` is already there replaces the old copy instead of being added a second time, and doesn't count towards the size limit. This cleans up after an interrupted move and after a retry, and it is what makes [pre-archived](#permanent-urls) items join their archive without taking up room twice.
+- **Duplicates.** When the client adds an item to an archive that already contains an item with the same `id`, it replaces the old copy instead of adding a second one, and the copy doesn't count as a new item for the size limit. This cleans up after a retry.
+- **Repairing the feed file.** The newest archive holds the newest items. Whenever a client writes the feed file after a post, it makes sure that every item of the newest archive is in it, in the archive's order, at the top, before it drops the items beyond 30. This brings back items that an interrupted post wrote only into the archive.
 - **`412` on the archive.** Another client has changed it. The client starts the whole post again at step 1.
-- **`412` when creating an archive.** The file exists already: created ahead of time for a permanent URL, left behind by an interrupted client, or created by another client at the same moment. The client loads it. If it carries the marker, its `next_url` is the expected one and the batch fits, the client adds the batch as in step 2. Otherwise it reloads the feed file: if that has changed, it starts the whole post again at step 1; if not, it tries the next number.
-- **`412` on the feed file** after the archive was written. The client starts again at step 1. The batch may now be in the archive and still in the feed file; the duplicate rule takes care of it.
-- **A missing archive.** If the archive that `next_url` names returns `404`, e.g. because the owner deleted it, the client creates it again under the same name, with `If-None-Match: *`. Its `next_url` points to the archive with the next lower number, if there is one.
-
-Readers may see an item in the feed file and in an archive at the same time. JSON Feed readers identify items by `id`, so they show it once.
-
-## Permanent URLs
-
-An item in the feed file is addressed as, e.g., `https://<owner host>/feed.json#<id>`, but only until it is archived. Some uses need a URL that never changes, most importantly the `source` of an [RFC-4](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) webmention, which the client sends again whenever it edits or deletes the item.
-
-Archiving is deterministic, so the client can tell which archive an item will end up in. It **writes the item into that archive right away**, and uses the archive's URL as the item's permanent URL:
-
-1. Compute the item's archive, as described below.
-2. Set `_pups.archive` on the item to the archive's public URL: `"_pups": { "archive": "https://tim.example.com/feed/feed.000002.json" }`. Once set, it never changes.
-3. Write the item into that archive. If the archive exists, add the item at the top of its `items` and `PUT` it with `If-Match`. If not, create it with `If-None-Match: *`, as a [new archive](#archives) with the item as its only entry, and `next_url` pointing to the archive with the next lower number, if there is one, even if that one doesn't exist yet either.
-4. Write the item into the feed file, as in [Posting](#posting).
-5. Use the archive's URL + `#<id>` as the permanent URL, e.g. as the webmention's `source`.
-
-An archive created ahead of time is not yet linked from the feed file; readers following the chain don't see it until regular archiving reaches it and links it (see the `412` rule in [Interrupted and concurrent writes](#interrupted-and-concurrent-writes)). The RFC-4 server doesn't follow the chain; it fetches the archive directly.
-
-**Computing the archive.** With limits of 30 items and batches of 10 (a client with other limits uses its own numbers):
-
-- `p` is the item's position in the feed file, counted from the oldest item, starting at 1. For a new post, it is the number of items including the new one.
-- The item will be moved in batch `j = floor((p − 1) / 10)`, counting from 0 for the next batch to be moved.
-- `N` is the number of the newest archive, the one `next_url` names, and `k` the number of items in it that are not also in the feed file. Without an archive, `N = −1` and `k = 30`.
-- `r = floor((30 − k) / 10)` batches still fit into archive `N`.
-- If `j < r`, the item ends up in archive `N`. Otherwise it ends up in archive `N + 1 + floor((j − r) / 3)`.
-
-Example: `/feed.json` has 24 items and `next_url` → `feed.000001.json`, which holds 10. A new comment makes 25, so `p = 25` and `j = 2`. Archive 1 has room for `r = 2` more batches, batches 0 and 1. Batch 2 starts archive 2. The client writes the comment into `/feed/feed.000002.json`, then into `/feed.json`, and sends the webmention with `source` = `https://tim.example.com/feed/feed.000002.json#c-Lq7Wm2xP9dRt4yZa`.
-
-The computation assumes that nothing else changes until the item is archived. Deleted items, other clients' limits, archiving by size or the owner's own edits can make it wrong. That doesn't break the permanent URL: an item with `_pups.archive` always goes into that archive when it is moved, so the URL stays valid. The archive may then end up a little larger than 30 items, or slightly out of order with its neighbours.
-
-A client that needs a permanent URL for an item that is already archived uses that archive. For an item that is still in the feed file, it follows the steps above with the item's current position.
+- **`412` when creating an archive.** The file exists already: left behind by an interrupted client, or created by another client at the same moment. The client loads it. If it carries the marker, its `next_url` is the expected one and it has room for the item, the client adds the item to it, as in step 3, and points `archive_url` to it. Otherwise it reloads the feed file: if that has changed, it starts the whole post again at step 1; if not, it tries the next number.
+- **`412` on the feed file** after the archive was written. The client starts again at step 1. The item is already in the archive; the duplicate rule takes care of it.
+- **A missing archive.** If the archive that `archive_url` names returns `404`, e.g. because the owner deleted it, the client creates it again under the same name, with `If-None-Match: *`, with the new item, and with `next_url` pointing to the archive with the next lower number, if there is one.
 
 ## Editing and deleting items
 
-**Editing.** The client looks for the item by `id`: first in the feed file, then along `next_url` from archive to archive, and stops at the first file that contains it. It changes the item, sets `date_modified` and `PUT`s the file with `If-Match`. On `412`, it searches again from the feed file, because the item may have been archived in the meantime. If the item is still in the feed file and carries `_pups.archive`, the client changes the copy in that archive first, then the one in the feed file.
+**In a feed without archives**, the client finds the item by `id` in the feed file, changes it and sets `date_modified`, or removes it, and `PUT`s the feed file with `If-Match`. On `412`, it starts again. Items that were dropped from the feed file can't be edited or deleted any more.
 
-**Deleting.** The client removes the item in the same way, from every copy: the one in the feed file, the one in its `_pups.archive`, and, because an interrupted move can leave a copy behind, the one in the newest archive. Then it deletes the item's media files from the feed directory, unless another item still uses them.
+**In a feed with archives**, only clients that support archives edit and delete items:
 
-Archives are never rebalanced. An archive that shrinks after deletions keeps its size, and an empty archive keeps its place in the chain; clients don't delete archive files.
+- **Editing.** The client looks for the item by `id` in the archives, starting with the one `archive_url` names and following `next_url`, and stops at the first archive that contains it. It changes the item there, sets `date_modified`, and `PUT`s the archive with `If-Match`. If the item is also in the feed file, it then changes it there in the same way. On `412`, it starts again.
+- **Deleting.** The client removes the item from its archive in the same way, and then from the feed file. After removing it from the feed file, it fills the feed file up to 30 items again from the archives, so that it keeps holding the newest 30.
+
+In both cases, after deleting an item, the client deletes the item's media files from the feed directory, unless another item still uses them.
+
+**Archives are never rebalanced.** Only the feed file is filled up again after a delete. An archive that loses items keeps the rest, and no items move into it from other archives. In the worst case, an archive ends up empty; it keeps its place in the chain, and clients don't delete archive files. If the newest archive is emptied, the next post goes into it as usual.
 
 ## Reading
 
-Nothing in this document is new for readers. A feed file is an ordinary JSON Feed with `next_url` pagination, as JSON Feed 1.1 describes it, and readers that don't follow `next_url` simply see the newest items. A reader that wants the whole history follows `next_url` until it ends. Readers that don't know `_pups` ignore it, as JSON Feed requires.
+A reader subscribes to the feed file and polls it, as any JSON Feed. It contains the newest 30 items, so readers that don't know `_pups` simply see those.
+
+In a feed with archives, a reader that wants the whole history follows `_pups.archive_url` to the newest archive, and from there `next_url` until it ends. Optionally, the feed file may also have a `next_url` that points to the newest archive, for readers that page through feeds but don't know `_pups`. If it has one, clients keep it equal to `archive_url`. Every item is in exactly one archive, but the newest 30 are also in the feed file; readers identify items by `id`, so they show each once. A reader that comes across an archive, e.g. through the `source` of an RFC-4 webmention, finds the feed to poll in the archive's `_pups.updates_url`.
 
 Readers find the main feed at `https://<owner host>/feed.json` without any discovery, and all feeds of a domain in `host-meta.json`. A website or profile that wants to point to a feed links to its feed file.
 
@@ -350,7 +353,7 @@ Readers find the main feed at `https://<owner host>/feed.json` without any disco
 This document doesn't say how a feed becomes a web page, and the server never produces HTML. Possible ways:
 
 - A **static site generator**, running on the owner's server or elsewhere, that rebuilds the site whenever a feed file or an archive changes.
-- A **static page** at `/index.html`, uploaded by the owner, that fetches `/feed.json` in the browser and renders it, following `next_url` for older posts. The feed is served with `Access-Control-Allow-Origin: *`, so the page could even be hosted elsewhere.
+- A **static page** at `/index.html`, uploaded by the owner, that fetches `/feed.json` in the browser and renders it, following `_pups.archive_url` and `next_url` for older posts. The feed is served with `Access-Control-Allow-Origin: *`, so the page could even be hosted elsewhere.
 - **No page at all.** The feeds are meant for readers, and the domain's home page shows something else.
 
 Whatever is used, it is not a client of this document: it only reads the files. Items that have a page of their own may name it in `url`, if the client knows it.
@@ -360,15 +363,15 @@ Whatever is used, it is not a client of this document: it only reads the files. 
 The main feed, or a named feed, can be the author feed of [RFC-4](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) posts and comments, as RFC-6 mentions. The owner's readers then see the comment in the feed.
 
 1. The client gives the item `_source.inReplyTo` as usual, and the feed carries the owner's SocialSpec account in `_source.accounts`.
-2. It writes the item with a [permanent URL](#permanent-urls): first into the archive it will end up in, then into the feed file.
-3. It sends the webmention with `source` = the archive's URL + `#<id>`, e.g. `https://tim.example.com/feed/feed.000002.json#c-Lq7Wm2xP9dRt4yZa`.
+2. It posts the item as described in [Posting](#posting).
+3. It sends the webmention with `source` = the URL of the archive it added the item to + `#<id>`, e.g. `https://tim.example.com/feed/feed.000002.json#c-Lq7Wm2xP9dRt4yZa`. The item never leaves that archive, so the `source` stays valid. In a feed without archives, `source` is the feed file's URL + `#<id>`; it is valid only as long as the item is among the newest 30.
 4. To edit or delete the comment, it changes or removes the item as described in [Editing and deleting items](#editing-and-deleting-items) and resends the webmention with the same `source`.
 
-The archive is on the owner's host, so RFC-4's `requireSocialSpec` check works for it as for the feed file.
+The archives are on the owner's host, so RFC-4's `requireSocialSpec` check works for them as for the feed file.
 
 ## Example
 
-`/feed.json` with two archives, and a comment that already has its permanent URL in the not yet linked archive `feed.000002.json`:
+`/feed.json` with three archives, and an RFC-4 comment:
 
 ```json
 {
@@ -377,15 +380,15 @@ The archive is on the owner's host, so RFC-4's `requireSocialSpec` check works f
   "home_page_url": "https://tim.example.com/",
   "feed_url": "https://tim.example.com/feed.json",
   "description": "Short notes on feeds, the web and everything else.",
-  "user_comment": "This feed is maintained by apps through a Personal Upload Server (PUPS), following https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md. Older items are in the archive at next_url.",
-  "next_url": "https://tim.example.com/feed/feed.000001.json",
+  "user_comment": "This feed is maintained by apps through a Personal Upload Server (PUPS), following https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md. It contains the newest items. If it has _pups.archive_url, all items are in the archives, starting with the one there.",
   "icon": "https://tim.example.com/feed/images/icons/icon-k3x9.png",
   "favicon": "https://tim.example.com/feed/images/icons/favicon-k3x9.png",
   "authors": [{ "name": "Tim", "url": "https://tim.example.com/" }],
   "language": "en",
   "_pups": {
     "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md",
-    "pupsControlled": true
+    "pupsControlled": true,
+    "archive_url": "https://tim.example.com/feed/feed.000002.json"
   },
   "_source": {
     "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
@@ -400,8 +403,7 @@ The archive is on the owner's host, so RFC-4's `requireSocialSpec` check works f
         "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
         "inReplyTo": "https://alice.example.com/feed.xml#post-42",
         "markdown": "Agreed, archives don't need a CMS."
-      },
-      "_pups": { "archive": "https://tim.example.com/feed/feed.000002.json" }
+      }
     },
     {
       "id": "p-8f2kQ9xLm4Tz7wRb",
@@ -413,34 +415,42 @@ The archive is on the owner's host, so RFC-4's `requireSocialSpec` check works f
 }
 ```
 
-`/feed/feed.000001.json`, the newest linked archive, with the copied feed fields:
+The feed file continues with 28 more items: the rest of `feed.000002.json`, then the newest items of `feed.000001.json`.
+
+`/feed/feed.000002.json`, the newest archive, with the copied feed fields. It holds the two items above, and gets every new item until it holds 20:
 
 ```json
 {
   "version": "https://jsonfeed.org/version/1.1",
   "title": "Tim's Notes",
   "home_page_url": "https://tim.example.com/",
-  "feed_url": "https://tim.example.com/feed.json",
+  "feed_url": "https://tim.example.com/feed/feed.000002.json",
   "description": "Short notes on feeds, the web and everything else.",
-  "user_comment": "This is an archive of https://tim.example.com/feed.json, maintained by apps through a Personal Upload Server (PUPS), following https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md. Newer items are in the feed at feed_url, older ones in the archive at next_url.",
-  "next_url": "https://tim.example.com/feed/feed.000000.json",
+  "user_comment": "This is an archive of https://tim.example.com/feed.json, maintained by apps through a Personal Upload Server (PUPS), following https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md. New items appear in the feed at _pups.updates_url, older ones are in the archive at next_url.",
+  "next_url": "https://tim.example.com/feed/feed.000001.json",
   "icon": "https://tim.example.com/feed/images/icons/icon-k3x9.png",
   "favicon": "https://tim.example.com/feed/images/icons/favicon-k3x9.png",
   "authors": [{ "name": "Tim", "url": "https://tim.example.com/" }],
   "language": "en",
   "_pups": {
     "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md",
-    "pupsControlled": true
+    "pupsControlled": true,
+    "updates_url": "https://tim.example.com/feed.json"
+  },
+  "_source": {
+    "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
+    "accounts": { "socialspec": "@tim.example.com" }
   },
   "items": [
-    { "id": "p-T5mWc2hJd9Ue4oPz", "content_text": "…", "date_published": "2026-10-02T07:30:00Z" }
+    { "id": "c-Lq7Wm2xP9dRt4yZa", "content_text": "Agreed, archives don't need a CMS.", "date_published": "2026-11-15T10:03:00Z", "_source": { "…": "…" } },
+    { "id": "p-8f2kQ9xLm4Tz7wRb", "title": "Archives without a CMS", "content_html": "…", "date_published": "2026-11-15T09:12:00Z" }
   ]
 }
 ```
 
-`/feed/feed.000000.json`, the oldest archive, looks the same, without `next_url`. `/feed/feed.000002.json` looks the same too, with `next_url` → `feed.000001.json` and the comment as its only item, until regular archiving fills it and links it from `/feed.json`.
+`/feed/feed.000001.json` looks the same with 20 items and `next_url` → `feed.000000.json`; `/feed/feed.000000.json`, the oldest archive, has no `next_url`.
 
-A named feed `photos` looks the same, with `"feed_url": "https://tim.example.com/feeds/photos.json"`, its own title, and its archives and images in `/feeds/photos/`.
+A named feed `photos` looks the same, with `"feed_url": "https://tim.example.com/feed/photos.json"`, its own title, and its archives and images in `/feed/photos/`.
 
 ## Open questions
 
