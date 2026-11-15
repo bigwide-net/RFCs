@@ -105,8 +105,9 @@ The `href` points to the configuration document. Its path is chosen by the serve
     { "path": "/.well-known/following.opml", "url": "https://tim.example.com/.well-known/following.opml" },
     { "path": "/.well-known/about.md", "url": "https://tim.example.com/.well-known/about.md", "properties": ["https://bigwide.net/ns/name"] },
     { "path": "/.well-known/contact.vcf", "url": "https://tim.example.com/.well-known/contact.vcf" },
-    { "path": "/feed.json", "url": "https://tim.example.com/feed.json" },
-    { "path": "/feed/", "url": "https://tim.example.com/feed/" }
+    { "path": "/feed.json", "url": "https://tim.example.com/feed.json", "rels": ["https://bigwide.net/ns/feed"] },
+    { "path": "/feed/", "url": "https://tim.example.com/feed/" },
+    { "path": "/feeds/", "url": "https://tim.example.com/feeds/", "rels": ["https://bigwide.net/ns/feed"] }
   ],
   "host_meta_endpoint": "https://tim.example.com/pups/host-meta",
   "max_upload_bytes": 26214400,
@@ -267,26 +268,30 @@ Rules:
 - **Under `/.well-known/`, only single files may be declared**, never directories, and only files from that list. Never `host-meta`, `host-meta.json`, `webfinger`, `oauth-authorization-server`, `openid-configuration`, `security.txt`, `change-password`, or anything under `acme-challenge/` (an app that could write there could obtain TLS certificates for the domain).
 - The file-type allowlist applies to well-known paths just as to app data.
 - Apps request each well-known scope explicitly, create nothing next to a well-known file, and should write it with `If-Match`, because the owner may also edit it by hand.
+- **Well-known files are shared.** An app's own directory has exactly one writer, the app, which may change its files as it likes. A well-known path, in contrast, can be granted to any number of apps, and they all write the same files, together with the owner. Every app keeps everything in such a file that it doesn't mean to change, including fields it doesn't know. Which parts of a file an app may change is decided by the spec that defines the file or its use, e.g. [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md) for the main feed. Where no spec says so, an app changes only what it created itself.
 
 ### The list of well-known paths
 
 A server may declare the following paths. All of them live at the domain root, so the `url` of each is `https://<owner host>` followed by the path. A server that can't write and serve the domain root doesn't declare them, and neither does a server whose website already serves one of the paths itself. WordPress, for example, serves its RSS feed at `/feed/`.
 
-| Path | Contents | Defined by | Consent screen | Properties |
-| --- | --- | --- | --- | --- |
-| `/.well-known/following.opml` | The people the owner follows | [FollowSpec](https://followspec.org) | the list of people you follow | — |
-| `/.well-known/about.md` | The owner's profile | [AboutSpec](https://aboutspec.org) | your profile | `https://bigwide.net/ns/name` |
-| `/.well-known/contact.vcf` | The owner's contact details | [ContactSpec](https://contactspec.org) | your contact details | — |
-| `/feed.json` | The owner's main feed | this RFC | your feed | — |
-| `/feed/` | The files of the main feed | this RFC | the files of your feed | — |
+| Path | Contents | Defined by | Consent screen | Link relations | Properties |
+| --- | --- | --- | --- | --- | --- |
+| `/.well-known/following.opml` | The people the owner follows | [FollowSpec](https://followspec.org) | the list of people you follow | — | — |
+| `/.well-known/about.md` | The owner's profile | [AboutSpec](https://aboutspec.org) | your profile | — | `https://bigwide.net/ns/name` |
+| `/.well-known/contact.vcf` | The owner's contact details | [ContactSpec](https://contactspec.org) | your contact details | — | — |
+| `/feed.json` | The owner's main feed | this RFC, [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md) | your feed | `https://bigwide.net/ns/feed` | — |
+| `/feed/` | The files of the main feed | this RFC, RFC-7 | the files of your feed | — | — |
+| `/feeds/` | The owner's other feeds and their files | RFC-7 | your feeds | `https://bigwide.net/ns/feed` | — |
 
-No entry has link relations yet, and no property takes a URL. The consent screen describes a scope for a listed path with the text from the table, e.g. "create, replace and delete your feed (`/feed.json`)". A scope for a directory inside `/feed/` is described by its path.
+The link relation `https://bigwide.net/ns/feed` registers a feed in `host-meta.json` (see [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#registering-feeds-in-host-metajson)). It is not single-valued: a domain can have several feeds. No property takes a URL. The consent screen describes a scope for a listed path with the text from the table, e.g. "create, replace and delete your feed (`/feed.json`)". A scope for a directory inside `/feed/` is described by its path, and so is a scope inside `/feeds/`, e.g. "create, replace and delete `/feeds/photos.json`".
 
 **`/feed.json`** is the owner's main feed: a [JSON Feed 1.1](https://www.jsonfeed.org/version/1.1/) document, with the extensions of the bigwide.net RFCs where they are used, e.g. [RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md) sources and [RFC-3](https://github.com/bigwide-net/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md) podcasting. Readers and apps find it on the domain without any discovery, and it can serve as the author feed of [RFC-4](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) comments. Its `feed_url` is `https://<owner host>/feed.json`. Like every `.json` file, it is served as `application/json`.
 
-**`/feed/`** holds the files that belong to the main feed: images and other media that its items reference, such as RFC-3 podcast episodes, and further JSON Feed documents that it points to, such as older pages linked with `next_url`. Apps organize the directory as they like, within the file-type allowlist. They store nothing there that the main feed doesn't use, directly or through another file in `/feed/`.
+**`/feed/`** holds the files that belong to the main feed: images and other media that its items reference, such as RFC-3 podcast episodes, and further JSON Feed documents that it points to, such as older pages linked with `next_url`. Apps organize the directory as they like, within the file-type allowlist and the conventions of RFC-7. They store nothing there that the main feed doesn't use, directly or through another file in `/feed/`.
 
-Several apps may write the main feed. Each app changes only the items it created and keeps everything else in the file unchanged, including fields it doesn't know, and writes the file with `If-Match` (see [Concurrency](#concurrency)).
+Several apps may write the main feed. [Feed Publishing with PUPS (RFC-7)](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md) defines the conventions they follow: how the feed is set up, which fields belong to whom, how items are posted, edited and deleted, and how older items move into archives in `/feed/`. All writes use `If-Match` (see [Concurrency](#concurrency)).
+
+**`/feeds/`** holds the owner's other feeds, each with a name: the feed `photos` is `/feeds/photos.json`, and its files are in `/feeds/photos/`. Apps usually ask for the scopes of one feed, `write:/feeds/photos.json write:/feeds/photos/`, and only apps that manage all of the owner's feeds for `write:/feeds/`. RFC-7 defines the layout and the conventions, which are the same as for the main feed.
 
 ### Public URLs
 
@@ -702,7 +707,7 @@ A test runner takes a base URL and a test client with its own CIMD document, and
 
 ## Open questions
 
-- **Names and URIs.** The link relation `https://bigwide.net/ns/personal-storage`, the ownership property `https://bigwide.net/ns/pups#client` and the property `https://bigwide.net/ns/name` are placeholders, to be published on bigwide.net.
+- **Names and URIs.** The link relation `https://bigwide.net/ns/personal-storage`, the ownership property `https://bigwide.net/ns/pups#client`, the property `https://bigwide.net/ns/name` and the feed relation `https://bigwide.net/ns/feed` are placeholders, to be published on bigwide.net.
 - **The list of well-known paths.** This RFC defines the initial list. Open: its home on bigwide.net, how new entries are proposed and accepted, and which link relations future entries bring.
 - **Sender-constrained tokens.** Should a later version support [DPoP](https://www.rfc-editor.org/rfc/rfc9449), so that a copied token is useless without the app's key?
 - **More types.** Are there file types that SocialSpec or feed apps need beyond the allowlist (e.g. `.ics` calendars, `.pdf`)?
