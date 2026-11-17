@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 885" width="1060" height="885" role="img" aria-labelledby="title desc">
+  <title id="title">RFC-4: submitting a comment</title>
+  <desc id="desc">Sequence diagram. The client reads the target feed and its submissions rules, publishes the item in the author feed on the author's domain, and sends a webmention to the submission server, which answers 201 with a status page. Asynchronously, the server fetches the author feed, checks the item and republishes it under a new guid in the comment feed. The client polls the status page; readers fetch the comment feed.</desc>
+  <style>
+    svg { --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --life: #c8d1da; --accent: #0969da; --box: #f6f8fa; --boxline: #d0d7de; --note: #ddf4ff; --noteline: #80ccff; --badge-fg: #ffffff; }
+    @media (prefers-color-scheme: dark) {
+      svg { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --life: #3d444d; --accent: #4493f8; --box: #151b23; --boxline: #3d444d; --note: #0d2847; --noteline: #1f6feb; --badge-fg: #0d1117; }
+    }
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--fg); }
+    .bg { fill: var(--bg); }
+    .title { font-size: 18px; font-weight: 600; }
+    .head { fill: var(--box); stroke: var(--boxline); stroke-width: 1; }
+    .name { font-size: 14px; font-weight: 600; text-anchor: middle; }
+    .role { font-size: 12px; fill: var(--muted); text-anchor: middle; }
+    .life { stroke: var(--life); stroke-width: 1.5; stroke-dasharray: 2 5; }
+    .req { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+    .res { stroke: var(--muted); stroke-width: 1.3; stroke-dasharray: 5 4; fill: none; }
+    .req-head { fill: var(--accent); }
+    .res-head { fill: var(--muted); }
+    .label, .sub, .reply { font-size: 13px; text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 5px; stroke-linejoin: round; }
+    .sub { font-size: 12px; fill: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .reply { fill: var(--muted); }
+    .badge { fill: var(--accent); }
+    .badge-n { font-size: 11px; font-weight: 700; fill: var(--badge-fg); text-anchor: middle; }
+    .bar { fill: var(--note); stroke: var(--noteline); stroke-width: 1; }
+    .note { fill: var(--note); stroke: var(--noteline); stroke-width: 1; }
+    .note-h { font-size: 13px; font-weight: 600; }
+    .note-t { font-size: 12px; }
+    .async { font-size: 12px; font-style: italic; fill: var(--muted); }
+  </style>
+  <defs>
+    <marker id="req" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="req-head"/>
+    </marker>
+    <marker id="res" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="res-head"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1060" height="885" rx="12"/>
+  <text class="title" x="30" y="32">Submitting a comment (RFC-4)</text>
+
+  <!-- Participants -->
+  <g>
+    <rect class="head" x="30" y="48" width="160" height="52" rx="8"/>
+    <text class="name" x="110" y="70">Client</text>
+    <text class="role" x="110" y="88">the author's app</text>
+
+    <rect class="head" x="250" y="48" width="160" height="52" rx="8"/>
+    <text class="name" x="330" y="70">Author's domain</text>
+    <text class="role" x="330" y="88">author feed</text>
+
+    <rect class="head" x="470" y="48" width="160" height="52" rx="8"/>
+    <text class="name" x="550" y="70">Target site</text>
+    <text class="role" x="550" y="88">blog or group feed</text>
+
+    <rect class="head" x="690" y="48" width="160" height="52" rx="8"/>
+    <text class="name" x="770" y="70">Submission server</text>
+    <text class="role" x="770" y="88">endpoint, comment feeds</text>
+
+    <rect class="head" x="870" y="48" width="160" height="52" rx="8"/>
+    <text class="name" x="950" y="70">Readers</text>
+    <text class="role" x="950" y="88">feed readers</text>
+  </g>
+
+  <!-- Lifelines -->
+  <line class="life" x1="110" y1="100" x2="110" y2="855"/>
+  <line class="life" x1="330" y1="100" x2="330" y2="855"/>
+  <line class="life" x1="550" y1="100" x2="550" y2="855"/>
+  <line class="life" x1="770" y1="100" x2="770" y2="855"/>
+  <line class="life" x1="950" y1="100" x2="950" y2="855"/>
+
+  <!-- Server processing -->
+  <rect class="bar" x="765" y="440" width="10" height="202"/>
+
+  <!-- 1: read the target feed -->
+  <line class="req" x1="122" y1="160" x2="548" y2="160" marker-end="url(#req)"/>
+  <circle class="badge" cx="110" cy="160" r="10"/><text class="badge-n" x="110" y="164">1</text>
+  <text class="label" x="330" y="150">GET the target feed</text>
+  <line class="res" x1="548" y1="190" x2="112" y2="190" marker-end="url(#res)"/>
+  <text class="reply" x="330" y="182">submissions: endpoint and rules</text>
+
+  <!-- 2: publish the item -->
+  <line class="req" x1="122" y1="255" x2="328" y2="255" marker-end="url(#req)"/>
+  <circle class="badge" cx="110" cy="255" r="10"/><text class="badge-n" x="110" y="259">2</text>
+  <text class="label" x="222" y="245">Publish the item</text>
+  <text class="sub" x="222" y="273">inReplyTo = target</text>
+
+  <!-- 3: webmention -->
+  <line class="req" x1="122" y1="330" x2="768" y2="330" marker-end="url(#req)"/>
+  <circle class="badge" cx="110" cy="330" r="10"/><text class="badge-n" x="110" y="334">3</text>
+  <text class="label" x="440" y="320">POST webmention to the endpoint</text>
+  <text class="sub" x="440" y="348">source = author feed#guid, target = post</text>
+  <line class="res" x1="768" y1="385" x2="112" y2="385" marker-end="url(#res)"/>
+  <text class="reply" x="440" y="377">201 Created, Location: status page</text>
+
+  <text class="async" x="784" y="416">asynchronously:</text>
+
+  <!-- 4: fetch the author feed -->
+  <line class="req" x1="758" y1="440" x2="332" y2="440" marker-end="url(#req)"/>
+  <circle class="badge" cx="770" cy="440" r="10"/><text class="badge-n" x="770" y="444">4</text>
+  <text class="label" x="545" y="430">GET the author feed</text>
+  <line class="res" x1="332" y1="470" x2="763" y2="470" marker-end="url(#res)"/>
+  <text class="reply" x="545" y="462">the item, found by its guid</text>
+
+  <!-- 5: check -->
+  <rect class="note" x="560" y="490" width="202" height="88" rx="6"/>
+  <circle class="badge" cx="578" cy="508" r="9"/><text class="badge-n" x="578" y="512">5</text>
+  <text class="note-h" x="594" y="513">Check the item</text>
+  <text class="note-t" x="574" y="533">inReplyTo = target</text>
+  <text class="note-t" x="574" y="550">author: feed host, socialspec</text>
+  <text class="note-t" x="574" y="567">rules and content (RFC-5)</text>
+
+  <!-- 6: republish -->
+  <rect class="note" x="560" y="588" width="202" height="54" rx="6"/>
+  <circle class="badge" cx="578" cy="606" r="9"/><text class="badge-n" x="578" y="610">6</text>
+  <text class="note-h" x="594" y="611">Republish</text>
+  <text class="note-t" x="574" y="631">new guid, in the comment feed</text>
+
+  <!-- 7: status page -->
+  <line class="req" x1="122" y1="690" x2="768" y2="690" marker-end="url(#req)"/>
+  <circle class="badge" cx="110" cy="690" r="10"/><text class="badge-n" x="110" y="694">7</text>
+  <text class="label" x="440" y="680">GET the status page</text>
+  <line class="res" x1="768" y1="725" x2="112" y2="725" marker-end="url(#res)"/>
+  <text class="reply" x="440" y="717">success, pubUrl of the comment</text>
+
+  <!-- 8: readers -->
+  <line class="req" x1="938" y1="775" x2="772" y2="775" marker-end="url(#req)"/>
+  <circle class="badge" cx="950" cy="775" r="10"/><text class="badge-n" x="950" y="779">8</text>
+  <text class="label" x="858" y="765">GET comment feed</text>
+  <text class="sub" x="858" y="793">source:comments</text>
+  <line class="res" x1="772" y1="832" x2="948" y2="832" marker-end="url(#res)"/>
+  <text class="reply" x="858" y="824">the comment</text>
+</svg>

@@ -95,12 +95,13 @@ The client needs a PUPS server whose configuration document declares the [well-k
 ```
 
 - For the main feed, `/feed.json` and `/feed/`. For named feeds, `/feed/` is enough: they have no well-known paths of their own, but are files and directories inside it. The `rels` of `/feed/` allow apps to register named feeds in `host-meta.json`.
+- **Servers declare both paths with the feed relation**, `"rels": ["https://bigwide.net/ns/feed"]`, as in the list of well-known paths. Without it, the host-meta endpoint refuses to register the feed (`403`), and readers and websites can't find the owner's named feeds. A client that finds the paths declared without the relation still publishes the feed, and tells the owner which link to add to `host-meta.json` by hand, as it does without a `host_meta_endpoint`.
 - The client requests both scopes of a feed, its file and its directory, and needs both: without the directory it can neither upload media nor write archives. If the owner grants only one of them, the client treats the grant as denied and tells the owner why.
 - A client that works with one named feed asks for that feed's scopes, `write:/feed/photos.json write:/feed/photos/`. The main feed's scopes include `write:/feed/`, and therefore every named feed as well: a client that writes the main feed can write all of the owner's feeds, and the consent screen should say so. A client with per-feed scopes that wants to create another feed runs a new authorization with the new feed's scopes.
 - If the server doesn't declare the paths, e.g. because the domain's website already serves a feed there, the client can't publish that feed. It tells the owner, and may offer to keep a feed in its own directory instead.
 - All feed scopes need step-up confirmation (RFC-6).
 
-The client reads files from `storage_base` and writes them there, as RFC-6 requires for ETags. It uses the **public URLs** (based on the `url` of the well-known entries) in everything it writes into a feed: `feed_url`, `next_url`, `archive_url`, `updates_url`, icons and media.
+The client reads files from `storage_base` and writes them there, as RFC-6 requires for ETags. It reads them with its token, as [fresh reads](https://github.com/bigwide-net/RFCs/blob/main/RFC-6-Personal-Upload-Server.md#fresh-reads), so that no cache hands it an old version. It uses the **public URLs** (based on the `url` of the well-known entries) in everything it writes into a feed: `feed_url`, `next_url`, `archive_url`, `updates_url`, icons and media.
 
 ## The feed file
 
@@ -353,7 +354,7 @@ Readers find the main feed at `https://<owner host>/feed.json` without any disco
 This document doesn't say how a feed becomes a web page, and the server never produces HTML. Possible ways:
 
 - A **static site generator**, running on the owner's server or elsewhere, that rebuilds the site whenever a feed file or an archive changes.
-- A **static page** at `/index.html`, uploaded by the owner, that fetches `/feed.json` in the browser and renders it, following `_pups.archive_url` and `next_url` for older posts. The feed is served with `Access-Control-Allow-Origin: *`, so the page could even be hosted elsewhere.
+- A **static page** at `/index.html`, put there by the owner (apps can't upload HTML), that fetches `/feed.json` in the browser and renders it, following `_pups.archive_url` and `next_url` for older posts. The feed is served with `Access-Control-Allow-Origin: *`, so the page could even be hosted elsewhere. [webpup](https://github.com/bigwide-net/webpup) is such a page: it reads `host-meta.json` for the registered feeds and the [site properties](https://github.com/bigwide-net/RFCs/blob/main/RFC-6-Personal-Upload-Server.md#site-properties) (name, title, summary, avatar, banner, theme color, language), the SocialSpec files and the feeds, and shows them as a profile with a full reader, with archive pages addressed by their numbers (`feed.000003.json` is page 3).
 - **No page at all.** The feeds are meant for readers, and the domain's home page shows something else.
 
 Whatever is used, it is not a client of this document: it only reads the files. Items that have a page of their own may name it in `url`, if the client knows it.

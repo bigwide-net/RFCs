@@ -34,12 +34,12 @@ The new parts are the configuration document, the scope syntax, the rules for pa
 - Least privilege: an app writes only its own directory, plus the specific well-known files the owner approved one by one.
 - Safe on ordinary web hosting: uploaded files can never execute on the server or run script with the owner's origin in a browser.
 - Works from browser apps (CORS), native apps and browser apps in local development (loopback redirects), and server-side apps alike.
-- Installable on cheap shared hosting with nothing but PHP and SQLite, and with one click on Cloudflare.
+- Installable on cheap shared hosting with nothing but PHP on Apache or a compatible web server (no database, no build step), and with one click on Cloudflare.
 
 **Non-goals**
 
 - **Website content.** Apps never write HTML, JavaScript or CSS. PUPS stores data and media, not web pages.
-- **Private storage.** Every stored file is public. There is no read scope and no access control on reading.
+- **Private storage.** Every stored file is public. There is no read scope and no access control on reading. A token on a read only bypasses caches (see [Fresh reads](#fresh-reads)); it grants no access.
 - **Multi-user hosting.** One installation has exactly one owner, and the owner is the domain.
 - **Directory listings, search, quotas per app, synchronization.** Clients keep track of their own files.
 - **Feed formats, federation and notifications.** Those belong to other specs (RFC-4, SocialSpec, …).
@@ -59,7 +59,7 @@ The new parts are the configuration document, the scope syntax, the rules for pa
 4. **Consent.** The owner logs in and sees the app's real domain and the paths it wants to write; they approve, narrow or deny.
 5. **Exchange.** The app receives a code, checks the issuer, and redeems the code for an access token, a refresh token and the owner's identity `me`.
 6. **Upload.** The app `PUT`s files with its bearer token, using ETags to avoid overwriting concurrent changes.
-7. **Read.** Anyone reads the published files at their public URL, without a token.
+7. **Read.** Anyone reads the published files at their public URL, without a token. An app that needs the latest version, e.g. to change a file, reads it at `storage_base` with its token, which bypasses caches.
 
 ## Discovery
 
@@ -103,10 +103,14 @@ The `href` points to the configuration document. Its path is chosen by the serve
   "scopes_supported": ["identify", "write:/appdata/"],
   "well_known_paths": [
     { "path": "/.well-known/following.opml", "url": "https://tim.example.com/.well-known/following.opml" },
-    { "path": "/.well-known/about.md", "url": "https://tim.example.com/.well-known/about.md", "properties": ["https://bigwide.net/ns/name"] },
+    { "path": "/.well-known/about.md", "url": "https://tim.example.com/.well-known/about.md",
+      "properties": ["https://bigwide.net/ns/name", "https://bigwide.net/ns/title", "https://bigwide.net/ns/summary", "https://bigwide.net/ns/theme-color", "https://bigwide.net/ns/language"] },
     { "path": "/.well-known/contact.vcf", "url": "https://tim.example.com/.well-known/contact.vcf" },
     { "path": "/feed.json", "url": "https://tim.example.com/feed.json", "rels": ["https://bigwide.net/ns/feed"] },
-    { "path": "/feed/", "url": "https://tim.example.com/feed/", "rels": ["https://bigwide.net/ns/feed"] }
+    { "path": "/feed/", "url": "https://tim.example.com/feed/", "rels": ["https://bigwide.net/ns/feed"] },
+    { "path": "/pups/images/", "url": "https://tim.example.com/pups/images/", "properties": ["https://bigwide.net/ns/avatar", "https://bigwide.net/ns/banner"] },
+    { "path": "/pups/pages/", "url": "https://tim.example.com/pups/pages/", "rels": ["https://bigwide.net/ns/webpup-pages"],
+      "properties": ["https://bigwide.net/ns/webpup-footer"], "link_properties": ["https://bigwide.net/ns/webpup-hidden"] }
   ],
   "host_meta_endpoint": "https://tim.example.com/pups/host-meta",
   "max_upload_bytes": 26214400,
@@ -195,9 +199,15 @@ The owner authenticates (see [Owner authentication](#owner-authentication)) and 
 - **The app's real domain in large type**, the client host. `client_name` and the logo are self-declared, and the screen makes that clear by showing them smaller and next to the domain.
 - A **"new app"** notice if this `client_id` has never been approved before.
 - A note that **the app runs on this computer** if the redirect URI is a loopback address.
-- A line saying that **the app will learn the owner's domain**. With `identify` alone the whole screen reads "Sign in to app.example as tim.example.com".
-- Each scope in plain words: "its own data (`/appdata/app.example/`)", "create, replace and delete your feed (`/feed.json`)", "create, replace and delete your profile (`/.well-known/about.md`)". **Every scope outside the app's own directory is visibly marked** and needs step-up confirmation.
-- A checkbox per scope, so the owner can drop individual scopes, and Approve / Deny.
+- The scopes in **at most four groups**, in this order:
+  1. **Identity**: "learn that you are tim.example.com". It is always shown and can't be unchecked, because every token response carries `me`. With `identify` alone the whole screen reads "Sign in to app.example as tim.example.com".
+  2. **App data**: "store its own data", for `write:/appdata/<client-host>/`.
+  3. **Feeds**: "manage your feeds", for `/feed.json`, `/feed/` and paths inside it, and `/.well-known/following.opml`.
+  4. **Profile**: "manage your profile", for all other well-known paths.
+
+  A group appears only if the request contains one of its scopes (identity always does). **Feeds and profile are visibly marked as outside the app's own directory**, and need step-up confirmation.
+- A checkbox per group, which grants or drops all of the group's scopes together, and Approve / Deny.
+- The details of each group in an **expandable section, collapsed by default**: each scope in plain words, e.g. "its own folder (`/appdata/app.example/`)", "your feed (`/feed.json`)" or "your profile (`/.well-known/about.md`)", and the link relations and properties the scopes allow in `host-meta.json`.
 
 The approve form carries a CSRF token, and the page is served with `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`. It is never CORS-enabled.
 
@@ -258,6 +268,7 @@ Each entry is an object:
 | `url` | The public URL of the file or directory. Default: `public_base` + `path` without its leading `/`. Needed for files that must live outside `public_base`, e.g. at the domain root. |
 | `rels` | The link relations apps may register in `host-meta.json` for files under this path. Default: none. |
 | `properties` | The top-level `host-meta.json` properties apps with this scope may set. Default: none. |
+| `link_properties` | The properties apps with this scope may set on the links they register for files under this path (see [Links](#links)). Default: none. |
 
 **Server-side rules from the list.** For each entry, the list of well-known paths (see below) also says which of its `rels` are **single-valued**, so that an existing link is never replaced (see [Links](#links)), and which of its `properties` take a **URL** as their value (see [Properties](#properties)). Only the server applies these rules, so they are not part of the configuration document: the server takes them from the list. An implementation may let the owner configure them along with the declared paths.
 
@@ -271,17 +282,19 @@ Rules:
 
 ### The list of well-known paths
 
-A server may declare the following paths. All of them live at the domain root, so the `url` of each is `https://<owner host>` followed by the path. A server that can't write and serve the domain root doesn't declare them, and neither does a server whose website already serves one of the paths itself. WordPress, for example, serves its RSS feed at `/feed/`.
+A server may declare the following paths. All of them live at the domain root, so the `url` of each is `https://<owner host>` followed by the path. A server that can't write and serve the domain root doesn't declare them (except `/pups/images/` and `/pups/pages/`, see below), and neither does a server whose website already serves one of the paths itself. WordPress, for example, serves its RSS feed at `/feed/`.
 
 | Path | Contents | Defined by | Consent screen | Link relations | Properties |
 | --- | --- | --- | --- | --- | --- |
 | `/.well-known/following.opml` | The people the owner follows | [FollowSpec](https://followspec.org) | the list of people you follow | — | — |
-| `/.well-known/about.md` | The owner's profile | [AboutSpec](https://aboutspec.org) | your profile | — | `https://bigwide.net/ns/name` |
+| `/.well-known/about.md` | The owner's profile | [AboutSpec](https://aboutspec.org) | your profile | — | `https://bigwide.net/ns/name`, `https://bigwide.net/ns/title`, `https://bigwide.net/ns/summary`, `https://bigwide.net/ns/theme-color`, `https://bigwide.net/ns/language` |
 | `/.well-known/contact.vcf` | The owner's contact details | [ContactSpec](https://contactspec.org) | your contact details | — | — |
 | `/feed.json` | The owner's main feed | this RFC, [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md) | your feed | `https://bigwide.net/ns/feed` | — |
 | `/feed/` | The files of the main feed, and the owner's other feeds | this RFC, RFC-7 | the files of your feed, and your other feeds | `https://bigwide.net/ns/feed` | — |
+| `/pups/images/` | The site's profile images: avatar and banner | this RFC | your site's profile images | — | `https://bigwide.net/ns/avatar` (URL), `https://bigwide.net/ns/banner` (URL) |
+| `/pups/pages/` | The site's pages and its footer, as Markdown | this RFC | your site's pages | `https://bigwide.net/ns/webpup-pages`, with the link property `https://bigwide.net/ns/webpup-hidden` | `https://bigwide.net/ns/webpup-footer` (URL) |
 
-The link relation `https://bigwide.net/ns/feed` registers a feed in `host-meta.json` (see [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#registering-feeds-in-host-metajson)). It is not single-valued: a domain can have several feeds. No property takes a URL. The consent screen describes a scope for a listed path with the text from the table, e.g. "create, replace and delete your feed (`/feed.json`)". A scope inside `/feed/` is described by its path, e.g. "create, replace and delete `/feed/photos.json`".
+The link relation `https://bigwide.net/ns/feed` registers a feed in `host-meta.json` (see [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#registering-feeds-in-host-metajson)). It is not single-valued: a domain can have several feeds, and neither is `https://bigwide.net/ns/webpup-pages` (see [Pages](#pages)). Only `avatar`, `banner` and `webpup-footer` take a URL (see [Site properties](#site-properties)). The details on the consent screen describe a scope for a listed path with the text from the table, e.g. "your feed (`/feed.json`)". A scope inside `/feed/` is described by its path, e.g. "`/feed/photos.json`". `/feed.json`, `/feed/` and `/.well-known/following.opml` are in the consent screen's group "manage your feeds", the others in "manage your profile" (see [Consent](#consent)).
 
 **`/feed.json`** is the owner's main feed: a [JSON Feed 1.1](https://www.jsonfeed.org/version/1.1/) document, with the extensions of the bigwide.net RFCs where they are used, e.g. [RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md) sources and [RFC-3](https://github.com/bigwide-net/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md) podcasting. Readers and apps find it on the domain without any discovery, and it can serve as the author feed of [RFC-4](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) comments. Its `feed_url` is `https://<owner host>/feed.json`. Like every `.json` file, it is served as `application/json`.
 
@@ -290,6 +303,44 @@ The link relation `https://bigwide.net/ns/feed` registers a feed in `host-meta.j
 Several apps may write the main feed. [Feed Publishing with PUPS (RFC-7)](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md) defines the conventions they follow: how the feed is set up, which fields belong to whom, how items are posted, edited and deleted, and how older items move into archives in `/feed/`. All writes use `If-Match` (see [Concurrency](#concurrency)).
 
 `/feed/` also holds the owner's other feeds, each with a name: the feed `photos` is `/feed/photos.json`, and its files are in `/feed/photos/`. An app that writes only such a feed asks for its scopes, `write:/feed/photos.json write:/feed/photos/`. The main feed's scope `write:/feed/` covers all of them. RFC-7 defines the layout and the conventions, which are the same as for the main feed.
+
+**`/pups/images/`** holds the images that describe the site as a whole: the avatar and the banner that a profile or a web page of the domain shows, e.g. `https://tim.example.com/pups/images/avatar-k3x9.png`. Apps store only images there (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`, `.svg`). Like feed icons (RFC-7), every new image gets a new file name, and the app deletes the old file after it has set the property to the new URL. `/pups/` itself belongs to the server, which may serve its own pages and endpoints there (e.g. the `host_meta_endpoint`); only the subdirectories `/pups/images/` and `/pups/pages/` may be declared. A server that can't serve the domain root may still declare them without a `url`: the files are then at `public_base` + `pups/images/` and `pups/pages/`, which is fine for links and for properties that take a URL.
+
+**`/pups/pages/`** holds the site's pages: Markdown files (`.md`) that a web page of the domain shows next to its feeds, such as "Now", "Uses" or an imprint, e.g. `https://tim.example.com/pups/pages/now.md`, and the images they show, in `/pups/pages/images/`. Apps store nothing else there. A page becomes part of the site when it is linked in `host-meta.json` (see [Pages](#pages)); the footer is a page too, linked by the property `https://bigwide.net/ns/webpup-footer`.
+
+### Site properties
+
+The top-level properties of `host-meta.json` that describe the site, for profiles, feed readers and web pages that render the domain (e.g. a single-page site that shows the owner's feeds). All are optional; a renderer falls back to its own defaults, never to guesses. Apps set them through the [host-meta endpoint](#editing-host-metajson) with the scope of the listed path.
+
+| Property | Value | Scope |
+| --- | --- | --- |
+| `https://bigwide.net/ns/name` | The owner's name, e.g. `Tim Jansen` | `/.well-known/about.md` |
+| `https://bigwide.net/ns/title` | The site's title, if it isn't the owner's name, e.g. `Tim's Notes` | `/.well-known/about.md` |
+| `https://bigwide.net/ns/summary` | One line about the site or its owner | `/.well-known/about.md` |
+| `https://bigwide.net/ns/theme-color` | The site's accent color, a CSS color, e.g. `#b0412e` | `/.well-known/about.md` |
+| `https://bigwide.net/ns/language` | The site's main language, a BCP 47 tag, e.g. `en` | `/.well-known/about.md` |
+| `https://bigwide.net/ns/avatar` | URL of a square image (at least 400 × 400 pixels) in `/pups/images/` | `/pups/images/` |
+| `https://bigwide.net/ns/banner` | URL of a wide image (3:1, at least 1500 × 500 pixels) in `/pups/images/` | `/pups/images/` |
+| `https://bigwide.net/ns/webpup-footer` | URL of a Markdown file in `/pups/pages/` that is shown at the bottom of every page of the site, e.g. a copyright line and a link to the imprint | `/pups/pages/` |
+
+`avatar`, `banner` and `webpup-footer` take a URL: the public URL of a file inside the app's granted scope, i.e. in `/pups/images/` or `/pups/pages/` (see [Properties](#properties)). A profile's text, its contact details and the people it follows stay in the SocialSpec files; these properties only add what those files don't have.
+
+### Pages
+
+A link with the rel `https://bigwide.net/ns/webpup-pages` makes a Markdown file in `/pups/pages/` a page of the site. A renderer shows each page with its own URL, for example as a tab.
+
+```json
+{ "rel": "https://bigwide.net/ns/webpup-pages", "type": "text/markdown", "href": "https://tim.example.com/pups/pages/now.md" },
+{ "rel": "https://bigwide.net/ns/webpup-pages", "type": "text/markdown", "href": "https://tim.example.com/pups/pages/uses.md",
+  "titles": { "default": "Uses", "de": "Werkzeuge" } },
+{ "rel": "https://bigwide.net/ns/webpup-pages", "type": "text/markdown", "href": "https://tim.example.com/pups/pages/imprint.md",
+  "properties": { "https://bigwide.net/ns/webpup-hidden": "true" } }
+```
+
+- **Order.** The pages are in the order of their links in `links`. [RFC 7033](https://www.rfc-editor.org/rfc/rfc7033#section-4.4.4) allows a JRD's order to express a preference. Apps change it with the `order` action of the [host-meta endpoint](#endpoint).
+- **Title.** The link's `titles` ([RFC 7033](https://www.rfc-editor.org/rfc/rfc7033#section-4.4.4.4)): the site's language, else `default`, else any. Without `titles`, a renderer uses the first heading of the file, else its file name.
+- **Hidden pages.** With the link property `https://bigwide.net/ns/webpup-hidden` set to `"true"`, the page has its URL but isn't listed, e.g. an imprint that only the footer links to.
+- **Links between pages.** A Markdown link to the file of a page, such as `[Imprint](/pups/pages/imprint.md)`, leads to that page.
 
 ### Public URLs
 
@@ -349,7 +400,7 @@ The server records for each grant the current refresh token, the token it replac
 
 ## Upload API
 
-All writes carry `Authorization: Bearer <access_token>`. Tokens are never accepted in the URL or the body. Paths are relative to `storage_base`.
+All writes carry `Authorization: Bearer <access_token>`, and reads may carry it to bypass caches. Tokens are never accepted in the URL or the body. Paths are relative to `storage_base`.
 
 | Request | Headers | Success | Meaning |
 | --- | --- | --- | --- |
@@ -357,15 +408,30 @@ All writes carry `Authorization: Bearer <access_token>`. Tokens are never accept
 | `PUT <storage_base><path>` | `Content-Type`, `If-Match: "<etag>"` | `200 OK` + `ETag` | Replace only if unchanged; `412` otherwise. |
 | `PUT <storage_base><path>` | `Content-Type` only | `200`/`201` + `ETag` | Unconditional write. Allowed, discouraged. |
 | `DELETE <storage_base><path>` | `If-Match` optional | `204 No Content` | Delete; `404` if missing, `412` if the ETag doesn't match. |
-| `GET`/`HEAD <storage_base><path>` | none | `200` + `ETag` | Public read, no token needed. |
+| `GET`/`HEAD <storage_base><path>` | none | `200` + `ETag` | Public read, no token needed. May come from a cache. |
+| `GET`/`HEAD <storage_base><path>` | `Authorization` | `200` + `ETag` | Fresh read: the latest version, never from a cache. See [Fresh reads](#fresh-reads). |
 
 The body of a `PUT` is the raw file. `Content-Length` should be sent; the server rejects bodies over `max_upload_bytes` with `413` without storing anything, also for chunked uploads. A failed write never leaves a partial file: the server writes atomically.
+
+### Fresh reads
+
+Caches between the app and the server can serve an old version of a file for a while after a write: a CDN in front of the whole domain, a hosting provider's caching proxy, the browser's cache. Users then don't see their own changes, and read-modify-write fails with `412` again and again, because every attempt reads the same old ETag. Therefore a `GET` or `HEAD` at `storage_base` may carry the app's bearer token, and is then a **fresh read**:
+
+- **Any valid access token of this server** is accepted, whatever its scopes, `identify` included. All files are public, so the token grants nothing; it only makes the request one that caches pass on. Shared caches don't store responses to requests with `Authorization` ([RFC 9111](https://www.rfc-editor.org/rfc/rfc9111#section-3.5)), and common caching proxies pass such requests through.
+- **An invalid, expired or revoked token** gets `401` with `WWW-Authenticate: Bearer error="invalid_token"`, as for writes. The server never falls back to a public read, so the app learns that it must refresh.
+- **The latest version.** The server answers from its storage, never from a cache of its own (CDN edge, page cache, object cache), and the response reflects every write that completed before the request was received. Its ETag is the one that a following `If-Match` is compared with.
+- **Headers.** The response carries `Cache-Control: private, no-store` instead of the usual caching header, and otherwise the same headers as any uploaded file (see [Serving files](#serving-files)). Conditional requests (`If-None-Match` → `304`) and ranges work as in public reads.
+- **Only `Bearer` counts.** Another `Authorization` scheme, e.g. `Basic` from a password-protected site, is not a token: the server ignores it, and the request is a public read.
+- **Without a token**, the request is a public read as before. Its response should carry `Vary: Authorization`, so that a cache that stored it doesn't use it for a request with a token.
+- **Routing.** A server whose web server serves the files directly, without PUPS, must route `GET` and `HEAD` requests that carry `Authorization` to PUPS.
+
+Apps use fresh reads when they read a file in order to change it, and when they show the owner what they have just written. Readers and public URLs are unaffected: a CDN on `public_base` still needs its purge (see [Caching](#serving-files)), and the browser's own cache is bypassed by the app (e.g. `fetch(…, { cache: 'no-store' })`).
 
 ### Concurrency
 
 ETags make read-modify-write safe when several apps, or the owner, change the same file, e.g. a feed that gets a new item:
 
-1. `GET` the file from `storage_base` and remember its `ETag`.
+1. `GET` the file from `storage_base` with the token (a [fresh read](#fresh-reads)) and remember its `ETag`.
 2. Change it and `PUT` it with `If-Match: "<etag>"`.
 3. On `412`, start again at 1.
 
@@ -465,7 +531,7 @@ How uploaded files are served is the second half of the protection. Every upload
 
 **Service workers.** A request for an uploaded file with the header `Service-Worker: script` is refused with `403`. Uploads never contain JavaScript, so this is defence in depth against a file being registered as a service worker for the owner's origin.
 
-**Caching.** Feeds and profiles change, and other servers fetch them right after an app writes them (an RFC-4 server fetches the author feed as soon as it receives the webmention). Files should be served with short cache lifetimes or `Cache-Control: no-cache`, and servers behind a CDN should purge a file's public URL when it changes.
+**Caching.** Feeds and profiles change, and other servers fetch them right after an app writes them (an RFC-4 server fetches the author feed as soon as it receives the webmention). Files should be served with short cache lifetimes or `Cache-Control: no-cache`, and servers behind a CDN should purge a file's public URL when it changes. Apps that need the latest version themselves use [fresh reads](#fresh-reads), which bypass every cache.
 
 ## CORS
 
@@ -515,15 +581,23 @@ Every successful authorization proves that the person controls the domain: only 
 
 ### Endpoint
 
-`host_meta_endpoint` takes `POST` only, with a bearer token and a JSON body. Three actions exist:
+`host_meta_endpoint` takes `POST` only, with a bearer token and a JSON body. Four actions exist:
 
 ```json
 { "action": "add", "rel": "https://app.example/rel/comments", "href": "https://tim.example.com/files/appdata/app.example/comments.json", "type": "application/feed+json" }
 { "action": "remove", "rel": "https://app.example/rel/comments", "href": "https://tim.example.com/files/appdata/app.example/comments.json" }
 { "action": "set-property", "property": "https://bigwide.net/ns/name", "value": "Tim" }
+{ "action": "order", "rel": "https://bigwide.net/ns/webpup-pages", "hrefs": ["https://tim.example.com/pups/pages/uses.md", "https://tim.example.com/pups/pages/now.md", "https://tim.example.com/pups/pages/imprint.md"] }
 ```
 
-Responses: `201` added or set, `204` removed, `400` invalid request, `403` outside scope, rel or property not allowed, `409` conflict or invalid file, `413` limit reached.
+`add` also takes `titles` and `properties` for the link:
+
+```json
+{ "action": "add", "rel": "https://bigwide.net/ns/webpup-pages", "href": "https://tim.example.com/pups/pages/imprint.md", "type": "text/markdown",
+  "titles": { "default": "Imprint", "de": "Impressum" }, "properties": { "https://bigwide.net/ns/webpup-hidden": "true" } }
+```
+
+Responses: `201` added or set, `204` removed or ordered, `400` invalid request, `403` outside scope, rel or property not allowed, `409` conflict or invalid file, `413` limit reached.
 
 ### Links
 
@@ -531,6 +605,9 @@ Responses: `201` added or set, `204` removed, `400` invalid request, `403` outsi
 - **Own files only.** `href` must be the public URL of a file inside the app's granted scope. An app can never point the owner's links to another domain or to another app's files.
 - **Allowed rels.** For a file under a well-known path, only the `rels` declared for that path. For a file in `/appdata/`, only URI rels on the client host, with or without `www.` (`https://app.example/rel/…`). Nobody can register the PUPS rel itself or identity rels such as WebFinger's `http://webfinger.net/rel/profile-page`, `me`, `authorization_endpoint` or `openid`.
 - **Conflicts.** For rels that the list of well-known paths defines as single-valued, an existing link (the owner's or another app's) is not replaced; the request gets `409`.
+- **Titles and properties.** `titles` maps a BCP 47 language tag or `default` to a title, as in [RFC 7033](https://www.rfc-editor.org/rfc/rfc7033#section-4.4.4.4): at most 20 entries, each title a string of at most 255 characters without control characters. `properties` may hold only the `link_properties` declared for the well-known path of the `href`, with string values of at most 2,048 characters without control characters; links to `/appdata/` take none. Nobody can set the ownership marker this way.
+- **Changing a link.** `add` for a link that exists already (same `rel` and `href`) and belongs to the app replaces its `type`, `titles` and link properties with those of the request; omitted fields are removed. If the link belongs to the owner or another app, it stays as it is: without `titles` and `properties` the request succeeds, otherwise it gets `409`.
+- **Order.** `order` arranges the links of one rel. `hrefs` must list every link of that rel in the file exactly once, the owner's and other apps' included; otherwise the app's view is out of date, and the request gets `409`. PUPS then puts those links into the given order, in the positions they occupy in `links`. All other links stay where they are, and the links themselves don't change: reordering the owner's links doesn't change them. The app must hold a well-known scope whose entry declares the rel; for `/appdata/` rels, it may order only rels on its own client host.
 - **Limits.** At most 1,000 links in the file and 10 `/appdata/` links per app.
 
 ### Properties
@@ -543,9 +620,11 @@ Top-level `properties` in `host-meta.json` ([RFC 6415](https://www.rfc-editor.or
 
 ### Consent and lifecycle
 
-- **Consent.** Adding a rel or setting a property for a well-known path is covered by that path's scope and its step-up confirmation; there is no extra scope. The consent screen lists the rels and properties the scope allows.
+- **Consent.** Adding a rel or setting a property for a well-known path is covered by that path's scope and its step-up confirmation; there is no extra scope. The details of the scope's group on the consent screen list the rels and properties it allows.
 - **Revocation.** When a grant is revoked, PUPS removes the app's `/appdata/` links. Its well-known links stay, because the files stay too; they lose the ownership marker and become the owner's. Properties are never removed on revocation.
 - **Owner control.** The owner can remove any link or property on the apps page.
+
+An app that removes a page deletes its file and removes its link. Apps can't remove the footer property; an app that removes the footer empties its file.
 
 ## Owner authentication
 
@@ -696,16 +775,19 @@ A test runner takes a base URL and a test client with its own CIMD document, and
 - Paths: `..`, `%2e%2e`, backslashes, dotfiles, trailing dots → `400`. Dot segments are tested through the `path` parameter of `post_endpoint` when it is declared; sent in the URL, they may be resolved on the way (see [Paths](#paths)), so the test accepts either `400` or the answer for the resolved path, but never a write outside the scope; a declared `/.well-known/` file is writable, an undeclared one and `host-meta.json` are not.
 - Types: `.php`, `.phtml`, `feed.php.json`, `.htaccess`, HTML, JavaScript, CSS, a mismatched `Content-Type` → `415`, nothing stored; oversized uploads → `413`, nothing stored.
 - Serving: every uploaded file has the type of its extension, `nosniff`, `sandbox` and CORS headers; `Service-Worker: script` → `403`.
+- Fresh reads: `GET` and `HEAD` at `storage_base` with a valid token of any scope, `identify` included, return the latest write with its ETag and `Cache-Control: private, no-store`, also right after a write; an invalid, expired or revoked token → `401`; without a token, the public read is unchanged and carries `Vary: Authorization`.
 - CORS on preflights and on every response, including errors.
 - All upload tests repeated through `post_endpoint` when it is declared.
 - An `identify`-only token can't write.
 - Same-domain mode sets no cookie on any response.
 - `host-meta.json` links: owner entries untouched, foreign `href`s and reserved rels rejected, concurrent changes retried, invalid JSON refused with `409`, limits enforced, `/appdata/` links removed on revocation.
+- Link titles and properties: undeclared link properties and the ownership marker → `403`; overlong titles or values → `400`; `add` replaces the app's own link's titles and properties, and gets `409` for another's link.
+- `order`: the links of the rel are reordered in their positions and nothing else moves; a list that misses a link, has one twice or names one that doesn't exist → `409`; a rel without a granted scope → `403`.
 - `host-meta.json` properties: only properties declared for a granted well-known path can be set, others → `403`; there is no way for apps to remove a property; overlong values, control characters and URL values outside the scope are rejected; other links and properties are untouched.
 
 ## Open questions
 
-- **Names and URIs.** The link relation `https://bigwide.net/ns/personal-storage`, the ownership property `https://bigwide.net/ns/pups#client`, the property `https://bigwide.net/ns/name` and the feed relation `https://bigwide.net/ns/feed` are placeholders, to be published on bigwide.net.
+- **Names and URIs.** The link relation `https://bigwide.net/ns/personal-storage`, the ownership property `https://bigwide.net/ns/pups#client`, the site properties `https://bigwide.net/ns/name`, `title`, `summary`, `theme-color`, `language`, `avatar`, `banner` and `webpup-footer`, the pages relation `https://bigwide.net/ns/webpup-pages` and its link property `webpup-hidden`, and the feed relation `https://bigwide.net/ns/feed` are placeholders, to be published on bigwide.net.
 - **The list of well-known paths.** This RFC defines the initial list. Open: its home on bigwide.net, how new entries are proposed and accepted, and which link relations future entries bring.
 - **Sender-constrained tokens.** Should a later version support [DPoP](https://www.rfc-editor.org/rfc/rfc9449), so that a copied token is useless without the app's key?
 - **More types.** Are there file types that SocialSpec or feed apps need beyond the allowlist (e.g. `.ics` calendars, `.pdf`)?
