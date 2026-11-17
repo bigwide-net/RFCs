@@ -22,6 +22,18 @@ Everything else comes from existing specs. Replies, comment feeds, counts, Markd
 
 **Why now.** [rss.chat](https://rss.chat) shows that a feed post can carry a conversation: readers browse the comments on a post and reply to them, linked with `source:inReplyTo` and `source:comments`. But the current implementation relies on a central server, and users must register on that server before they can write a comment. This proposal allows commenting without registering anywhere. The author proves who they are by publishing the comment: on their own domain, which this RFC uses as their identity, or, for classic mentions, in their feed. The feed is where they publish, and webmention is how the comment reaches the post. What is missing is a way for a client to learn, from the target feed alone, where to submit and which rules apply. Without it, a client fails at the first comment that is too long or uses a link where links are not allowed, and the author learns why only from an error message, or from finding that the comment was not published at all, or was published with features missing.
 
+## Why publish first, then notify
+
+A client could simply send the comment to the server, the way a comment form on a blog does. This proposal deliberately takes a detour: the author first publishes the comment on their own domain, and the server only fetches it from there. There are two reasons for this.
+
+**No authentication.** A server that accepts comments directly must find out who sends them. It needs accounts, passwords, e-mail confirmation or a login through a third party, and every server needs its own. Here, publishing is the proof: only whoever controls the domain, or the feed, can put an item into it. The server checks where the comment is published, not who sent the webmention, and needs no user database. The author doesn't register anywhere, and one author feed works with every server. See [Authorship](#authorship).
+
+**The author stands behind the comment.** A comment typed into a form exists only on someone else's server. A comment in the author's feed is published by the author, under their own name and on their own domain, next to everything else they publish. That gives it more weight:
+
+- **Accountability.** The comment becomes part of the author's public record. Readers can trace it back to its origin and see who wrote it and what else they have published. It can't be attributed to someone else, and the author can't easily disown it. Signing a text with one's own domain invites more care than an anonymous text box.
+- **Clear roles.** The author is the original publisher; the server republishes, with the author's consent, what is already public, much like syndication or a quotation. This may also matter legally: in many jurisdictions, responsibility for content rests primarily with whoever first published it, and a service that republishes can be in a different position than one on whose pages the content was written. The details vary from country to country, and this proposal doesn't depend on them.
+- **Ownership.** The original stays with the author. They keep a copy of everything they wrote, can edit or delete it where the server allows that (see [Edits and deletes](#edits-and-deletes)), and their comments outlive the server they were sent to.
+
 ## Roles
 
 - **Server**: receives webmentions for one or more feeds, checks them and republishes accepted items in comment feeds. For a blog it hosts only the comments, and the blog itself can live anywhere. For a discussion group it also publishes the group feed with the posts.
