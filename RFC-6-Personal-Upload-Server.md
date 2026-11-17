@@ -22,7 +22,7 @@ The protocol is built from existing specs, with as little new as possible:
 - **Uploads**: plain HTTP `PUT` and `DELETE` with bearer tokens ([RFC 6750](https://www.rfc-editor.org/rfc/rfc6750)) and ETag preconditions ([RFC 9110](https://www.rfc-editor.org/rfc/rfc9110#name-conditional-requests)), plus a `POST` fallback for hosts that block those methods.
 - **Sign-in with your domain**: because only the domain's owner can approve, every authorization also proves control of the domain. The token response names the owner's domain in `me`, as [IndieAuth](https://indieauth.spec.indieweb.org/) does.
 
-The new parts are the configuration document, the scope syntax, the rules for paths and file types, and an endpoint that lets apps register links in `host-meta.json`.
+The new parts are the configuration document, the scope syntax, the rules for paths and file types, and an endpoint that lets apps register links in `host-meta.json`. See [What is new and what is reused](#what-is-new-and-what-is-reused).
 
 **Why now.** [RFC-4](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) lets anyone comment without registering anywhere, by publishing the comment in a feed on their own domain. [SocialSpec](https://socialspec.org) builds profiles, contact details and follow lists from files on the user's domain. Both assume that the user can put files on their domain, and both leave open how an app does that. Today the answer is "upload them yourself", with FTP, a CMS plugin or a static site generator. No app can write to a user's domain without app-specific setup, so every app ends up hosting the user's data itself, which is exactly the centralization these specs try to avoid. A protocol that any app can use with nothing but the user's domain name closes that gap. It has to be secure enough to give third-party apps write access to the domain that is the user's identity, and simple enough to install on a $2 shared host.
 
@@ -43,6 +43,46 @@ The new parts are the configuration document, the scope syntax, the rules for pa
 - **Multi-user hosting.** One installation has exactly one owner, and the owner is the domain.
 - **Directory listings, search, quotas per app, synchronization.** Clients keep track of their own files.
 - **Feed formats, federation and notifications.** Those belong to other specs (RFC-4, SocialSpec, …).
+
+## What is new and what is reused
+
+PUPS invents as little as possible. Most of it is existing standards, some of them with stricter rules, and a few pieces that no existing spec covers. For readers nothing is new: they fetch public files over plain HTTP.
+
+**Used as they are.** These specs are used without changes, and existing libraries for them work.
+
+| Spec | Used for |
+| --- | --- |
+| [OAuth 2.1](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/), authorization code flow with [PKCE](https://www.rfc-editor.org/rfc/rfc7636) | Asking the owner for permission. See [Authorization](#authorization). |
+| [RFC 6750](https://www.rfc-editor.org/rfc/rfc6750) bearer tokens, [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009) revocation | Authenticating uploads, disconnecting apps. |
+| [RFC 9207](https://www.rfc-editor.org/rfc/rfc9207) `iss` parameter | Protecting apps that talk to many servers against mix-up attacks. |
+| [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414) server metadata | Generic OAuth tooling. PUPS clients don't need it. |
+| [RFC 6415](https://www.rfc-editor.org/rfc/rfc6415) `host-meta.json`, with [RFC 7033](https://www.rfc-editor.org/rfc/rfc7033) links, titles and order | Discovery, and the domain's index of feeds, pages and site properties. |
+| HTTP `PUT`, `DELETE` and conditional requests ([RFC 9110](https://www.rfc-editor.org/rfc/rfc9110#name-conditional-requests)) | Uploads, and safe concurrent changes with ETags. |
+| HTTP caching ([RFC 9111](https://www.rfc-editor.org/rfc/rfc9111)) | Fresh reads: shared caches don't store responses to requests with `Authorization`. |
+| [CORS](https://fetch.spec.whatwg.org/#http-cors-protocol), `Content-Security-Policy: sandbox`, `X-Content-Type-Options: nosniff` | Browser apps, and serving uploads safely. |
+| `me` from [IndieAuth](https://indieauth.spec.indieweb.org/) | Sign-in with the domain. |
+| Passkeys ([WebAuthn](https://www.w3.org/TR/webauthn-3/)), `__Host-` cookies | The owner login. |
+
+**Used with stricter rules.** These specs leave choices open. PUPS makes them, mostly for security, and an implementation must follow them even where the base spec would allow more.
+
+| Spec | PUPS's rules |
+| --- | --- |
+| OAuth 2.1 | Public clients only, PKCE with S256 only, codes valid for 60 seconds, refresh tokens rotated on every use with a short [grace period](#refresh) for lost responses. |
+| [Client ID Metadata Documents](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/) | The client host is the app's identity, and names its directory. `client_uri` and `logo_uri` must be on that host. See [Client identity](#client-identity). |
+| [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252) loopback redirects | Accepted for every app, `localhost` is not. |
+
+**New in this RFC.** No existing spec covers these:
+
+- **The configuration document** and the link relation that points to it from `host-meta.json`: where to write (`storage_base`), where files are read (`public_base`), the well-known paths and the limits. See [Discovery](#discovery).
+- **Path scopes**: `write:<path>` and `identify`, and the rule that an app writes only its own directory, `/appdata/<client-host>/`, plus well-known paths the owner approved one by one. See [Scopes](#scopes).
+- **The list of well-known paths**: the main feed, the SocialSpec files, the site's images and pages, and the site properties and link relations that belong to them. See [Well-known paths](#well-known-paths).
+- **Rules for paths, file types and serving**: an allowlist of data and media types, with the headers every upload is served with, so that uploads can't run on the server or in the browser. See [Paths](#paths), [File types](#file-types) and [Serving files](#serving-files).
+- **Fresh reads**: a bearer token on a `GET` bypasses caches, but grants nothing. See [Fresh reads](#fresh-reads).
+- **The POST fallback** for hosts that block `PUT` and `DELETE`. See [POST fallback](#post-fallback).
+- **The host-meta endpoint**, through which apps add links to and set properties in `host-meta.json` without being able to touch the owner's entries. See [Editing host-meta.json](#editing-host-metajson).
+- **Requirements for the owner's side**: what the consent screen shows, step-up confirmation for well-known paths, and the two deployment modes. See [Consent](#consent), [Owner authentication](#owner-authentication) and [Deployment modes](#deployment-modes).
+
+A developer who knows OAuth and HTTP therefore needs to learn only the last list. An app can use any OAuth 2.1 client library that supports PKCE, and needs its own code only for discovery, scopes and the upload rules.
 
 ## Roles
 
