@@ -20,13 +20,13 @@ Everything else comes from existing specs. Replies, comment feeds, counts, Markd
 
 [rssmention](https://github.com/bigwide-net/rssmention) is the reference implementation. It supports only `republish: full`.
 
-**Why now.** [rss.chat](https://rss.chat) shows that a feed post can carry a conversation: readers browse the comments on a post and reply to them, linked with `source:inReplyTo` and `source:comments`. But the current implementation relies on a central server, and users must register on that server before they can write a comment. This proposal allows commenting without registering anywhere. The author only needs to prove that they own their domain, and they do that by publishing the comment on it. This RFC uses their domain as their identity; their feed is where they publish, and webmention is how the comment reaches the post. What is missing is a way for a client to learn, from the target feed alone, where to submit and which rules apply. Without it, a client fails at the first comment that is too long or uses a link where links are not allowed, and the author learns why only from an error message, or from finding that the comment was not published at all, or was published with features missing.
+**Why now.** [rss.chat](https://rss.chat) shows that a feed post can carry a conversation: readers browse the comments on a post and reply to them, linked with `source:inReplyTo` and `source:comments`. But the current implementation relies on a central server, and users must register on that server before they can write a comment. This proposal allows commenting without registering anywhere. The author proves who they are by publishing the comment: on their own domain, which is their identity as established by [socialspec.org](https://socialspec.org), or, for classic mentions, in their feed. The feed is where they publish, and webmention is how the comment reaches the post. What is missing is a way for a client to learn, from the target feed alone, where to submit and which rules apply. Without it, a client fails at the first comment that is too long or uses a link where links are not allowed, and the author learns why only from an error message, or from finding that the comment was not published at all, or was published with features missing.
 
 ## Roles
 
 - **Server**: receives webmentions for one or more feeds, checks them and republishes accepted items in comment feeds. For a blog it hosts only the comments, and the blog itself can live anywhere. For a discussion group it also publishes the group feed with the posts.
 - **Target feed**: a feed that announces `submissions`: a blog's feed, or a group feed.
-- **Author feed**: an RSS or JSON feed on the author's domain that contains the item to submit. It doesn't have to be the author's main public feed, and usually isn't: it is typically a feed only for commenting. A client may even create one feed per site the author comments on, or one per comment.
+- **Author feed**: an RSS or JSON feed on the author's domain that contains the item to submit. It may be the author's main public feed, as in classic mentions. When the target requires a socialspec account (see [Authorship](#authorship)), it usually isn't: it is typically a feed only for commenting, and a client may even create one feed per site the author comments on, or one per comment.
 - **Client**: the software that writes the item into the author feed and sends the webmention. It can be a blog engine, a feed-based social app or a script.
 - **Reader**: any feed reader. It shows target and comment feeds like other feeds; the extensions in this proposal only matter to it if it offers a "reply" button.
 
@@ -119,7 +119,7 @@ A missing rule has the default value from the table below. Clients and servers m
 | `minLength` | integer | `2` | Minimum length of the visible text in characters. See [Content](#content). |
 | `maxLength` | integer | `2000` | Maximum length of the content in characters. See [Content](#content). |
 | `allowStyle`, `allowLinks`, `allowCode`, `allowQuote`, `allowImages`, `allowTables`, `allowLists`, `allowHeadlines`, `urlAutoLinking` | boolean | `false` | The Comment HTML and Markdown features that are enabled. See [Content](#content). |
-| `requireSocialSpec` | boolean | `false` | The item or its feed must have a `socialspec` account whose host is the author feed's host. See [Authorship](#authorship). |
+| `requireSocialSpec` | boolean | `false` | The author must declare a `socialspec` account, in the item or its feed, whose host is the author feed's host. The domain is then the author's identity; without it, the feed is. See [Authorship](#authorship). |
 | `allowEdit` | boolean | `false` | Re-sending the webmention updates the republished item. |
 | `allowDelete` | boolean | `false` | Re-sending it after the item was removed from the author feed (or the feed answers 404/410) deletes the republished item. |
 | `commentLimit` | integer | `1000` | For posts: the maximum number of comments on all levels. For comments: the maximum number of direct replies to one comment. |
@@ -199,7 +199,7 @@ source=https%3A%2F%2Fbob.example.net%2Ffeed.xml%23c-17&target=https%3A%2F%2Frm.e
 
 Author feeds are **RSS 2.0 or JSON Feed**. Atom is not supported: two formats are enough. RSS because it is by far the most widespread, JSON Feed because it is the easiest to produce and to parse.
 
-An author feed only needs to be on the author's domain (see [Authorship](#authorship)). It can be a feed that exists just for commenting, one per site or one per comment, and doesn't need to be listed or linked anywhere. The server reads it when it receives the webmention, and again when the author re-sends the webmention to edit or delete the item, so it should stay available as long as the author may want to do that.
+When the target requires a socialspec account, an author feed only needs to be on the author's domain (see [Authorship](#authorship)). It can then be a feed that exists just for commenting, one per site or one per comment, and doesn't need to be listed or linked anywhere. The server reads it when it receives the webmention, and again when the author re-sends the webmention to edit or delete the item, so it should stay available as long as the author may want to do that.
 
 ### Source
 
@@ -234,9 +234,19 @@ Posts and comments are referenced by **the feed that contains them plus `#guid`*
 
 ### Authorship
 
-Anyone can send a webmention for any feed. To show that the author controls the source, an item or its feed carries a `socialspec` account (`<source:account service="socialspec">@alice.example.com</source:account>`, `_source.accounts.socialspec`). When `requireSocialSpec` is set, its host must be the author feed's host name, `alice.example.com` for `https://alice.example.com/feed.xml`. Without `requireSocialSpec`, the server republishes the account only if it matches and leaves it out otherwise, so a feed never shows an unverified account.
+Anyone can send a webmention for any feed. Who wrote a submission is established by where it is published, in one of two ways, depending on `requireSocialSpec`:
 
+<<<<<<< HEAD
 **Every author needs their own domain or subdomain.** This RFC uses the domain as the author's identity. Shared hosts, where many users publish under one host name, can't prove authorship this way. This is deliberate: it is what allows servers not to identify users any further. Whoever gave the author a domain or subdomain has already identified them, and the server doesn't need to repeat that with accounts, passwords or e-mail addresses.
+=======
+**With `requireSocialSpec`: the domain is the identity.** The author must have a [socialspec](https://socialspec.org) account and declare it in the item or in the author feed: `<source:account service="socialspec">@alice.example.com</source:account>` in RSS, `_source.accounts.socialspec` in JSON Feed. The account's host name must be the author feed's host name: `@alice.example.com` for `https://alice.example.com/feed.xml`. A submission without an account is rejected (`socialspec-missing`), and so is one whose account is on another host (`socialspec-mismatch`).
+
+Because the identity is the domain, not the feed, the author can submit from any feed on it: a feed only for comments, one per site, or one per comment (see [Author feeds](#author-feeds)). All of them are the same author.
+
+**Every author needs their own domain or subdomain.** As in socialspec, the domain is the author's identity. Shared hosts, where many users publish under one host name, can't prove authorship this way. This is deliberate: it is what allows servers not to identify users any further. Whoever gave the author a domain or subdomain has already identified them, and the server doesn't need to repeat that with accounts, passwords or e-mail addresses.
+
+**Without `requireSocialSpec`: the feed is the identity.** Any feed can submit, and readers identify the author by the author feed, together with the name in the item. This mostly makes sense for classic mentions, where people comment from their main feed. A socialspec account is optional. If the item or its feed declares one, the server republishes it only if its host matches the author feed's host, and leaves it out otherwise, so a feed never shows an unverified account.
+>>>>>>> 49c4721 (clarify ownership, feed vs domain)
 
 ### What is republished
 
