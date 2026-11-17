@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 1210" width="1060" height="1210" role="img" aria-labelledby="title desc">
+  <title id="title">RFC-6: how an app gets access to a PUPS server</title>
+  <desc id="desc">Sequence diagram. The owner enters their domain in the app. The app fetches host-meta.json from the owner's domain and the configuration document from the PUPS server. It redirects the owner's browser to the authorization endpoint with its client_id, scopes and PKCE challenge. The server fetches the client metadata document from the app's domain and checks the request, then shows the owner a login and consent screen. After approval, the browser is redirected back to the app with a code, state and iss. The app checks state and iss, redeems the code with its code_verifier at the token endpoint, receives an access token, a refresh token, the granted scope and me, and uploads files with PUT and its bearer token.</desc>
+  <style>
+    svg { --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --life: #c8d1da; --accent: #0969da; --box: #f6f8fa; --boxline: #d0d7de; --note: #ddf4ff; --noteline: #80ccff; --badge-fg: #ffffff; }
+    @media (prefers-color-scheme: dark) {
+      svg { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --life: #3d444d; --accent: #4493f8; --box: #151b23; --boxline: #3d444d; --note: #0d2847; --noteline: #1f6feb; --badge-fg: #0d1117; }
+    }
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--fg); }
+    .bg { fill: var(--bg); }
+    .title { font-size: 18px; font-weight: 600; }
+    .head { fill: var(--box); stroke: var(--boxline); stroke-width: 1; }
+    .name { font-size: 14px; font-weight: 600; text-anchor: middle; }
+    .role { font-size: 12px; fill: var(--muted); text-anchor: middle; }
+    .life { stroke: var(--life); stroke-width: 1.5; stroke-dasharray: 2 5; }
+    .req { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+    .res { stroke: var(--muted); stroke-width: 1.3; stroke-dasharray: 5 4; fill: none; }
+    .req-head { fill: var(--accent); }
+    .res-head { fill: var(--muted); }
+    .label, .sub, .reply { font-size: 13px; text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 5px; stroke-linejoin: round; }
+    .sub { font-size: 12px; fill: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .reply { fill: var(--muted); }
+    .badge { fill: var(--accent); }
+    .badge-n { font-size: 11px; font-weight: 700; fill: var(--badge-fg); text-anchor: middle; }
+    .note { fill: var(--note); stroke: var(--noteline); stroke-width: 1; }
+    .note-h { font-size: 13px; font-weight: 600; }
+    .note-t { font-size: 12px; }
+    .phase { font-size: 12px; font-style: italic; fill: var(--muted); }
+  </style>
+  <defs>
+    <marker id="req" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="req-head"/>
+    </marker>
+    <marker id="res" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="res-head"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1060" height="1210" rx="12"/>
+  <text class="title" x="30" y="32">Getting access to a PUPS server (RFC-6)</text>
+
+  <!-- Participants -->
+  <g>
+    <rect class="head" x="30" y="48" width="160" height="52" rx="8"/>
+    <text class="name" x="110" y="70">Owner</text>
+    <text class="role" x="110" y="88">in the browser</text>
+
+    <rect class="head" x="250" y="48" width="160" height="52" rx="8"/>
+    <text class="name" x="330" y="70">App</text>
+    <text class="role" x="330" y="88">browser, native or server</text>
+
+    <rect class="head" x="470" y="48" width="160" height="52" rx="8"/>
+    <text class="name" x="550" y="70">Owner's domain</text>
+    <text class="role" x="550" y="88">host-meta.json</text>
+
+    <rect class="head" x="690" y="48" width="160" height="52" rx="8"/>
+    <text class="name" x="770" y="70">PUPS server</text>
+    <text class="role" x="770" y="88">OAuth, upload API</text>
+
+    <rect class="head" x="870" y="48" width="160" height="52" rx="8"/>
+    <text class="name" x="950" y="70">App's domain</text>
+    <text class="role" x="950" y="88">client metadata</text>
+  </g>
+
+  <!-- Lifelines -->
+  <line class="life" x1="110" y1="100" x2="110" y2="1180"/>
+  <line class="life" x1="330" y1="100" x2="330" y2="1180"/>
+  <line class="life" x1="550" y1="100" x2="550" y2="1180"/>
+  <line class="life" x1="770" y1="100" x2="770" y2="1180"/>
+  <line class="life" x1="950" y1="100" x2="950" y2="1180"/>
+
+  <!-- Discover -->
+  <text class="phase" x="30" y="128">Discover</text>
+
+  <!-- 1: enter domain -->
+  <line class="req" x1="122" y1="160" x2="328" y2="160" marker-end="url(#req)"/>
+  <circle class="badge" cx="110" cy="160" r="10"/><text class="badge-n" x="110" y="164">1</text>
+  <text class="label" x="222" y="150">Enter the domain</text>
+  <text class="sub" x="222" y="178">tim.example.com</text>
+
+  <!-- 2: host-meta.json -->
+  <line class="req" x1="342" y1="220" x2="548" y2="220" marker-end="url(#req)"/>
+  <circle class="badge" cx="330" cy="220" r="10"/><text class="badge-n" x="330" y="224">2</text>
+  <text class="label" x="445" y="210">GET host-meta.json</text>
+  <line class="res" x1="548" y1="250" x2="332" y2="250" marker-end="url(#res)"/>
+  <text class="reply" x="440" y="242">personal-storage link</text>
+
+  <!-- 3: configuration document -->
+  <line class="req" x1="342" y1="305" x2="768" y2="305" marker-end="url(#req)"/>
+  <circle class="badge" cx="330" cy="305" r="10"/><text class="badge-n" x="330" y="309">3</text>
+  <text class="label" x="555" y="295">GET the configuration document</text>
+  <line class="res" x1="768" y1="335" x2="332" y2="335" marker-end="url(#res)"/>
+  <text class="reply" x="550" y="327">endpoints, storage_base, well_known_paths</text>
+
+  <!-- Authorize -->
+  <text class="phase" x="30" y="368">Authorize</text>
+
+  <!-- 4: redirect to authorization endpoint -->
+  <line class="req" x1="318" y1="395" x2="112" y2="395" marker-end="url(#req)"/>
+  <circle class="badge" cx="330" cy="395" r="10"/><text class="badge-n" x="330" y="399">4</text>
+  <text class="label" x="215" y="385">Redirect</text>
+  <line class="req" x1="112" y1="450" x2="768" y2="450" marker-end="url(#req)"/>
+  <text class="label" x="440" y="440">GET the authorization endpoint</text>
+  <text class="sub" x="440" y="468">client_id, redirect_uri, scope, state, code_challenge</text>
+
+  <!-- 5: client metadata -->
+  <line class="req" x1="782" y1="515" x2="948" y2="515" marker-end="url(#req)"/>
+  <circle class="badge" cx="770" cy="515" r="10"/><text class="badge-n" x="770" y="519">5</text>
+  <text class="label" x="865" y="505">GET client_id URL</text>
+  <line class="res" x1="948" y1="545" x2="772" y2="545" marker-end="url(#res)"/>
+  <text class="reply" x="860" y="537">client metadata</text>
+  <text class="sub" x="860" y="563">redirect_uris</text>
+
+  <!-- 6: check -->
+  <rect class="note" x="560" y="580" width="202" height="88" rx="6"/>
+  <circle class="badge" cx="578" cy="598" r="9"/><text class="badge-n" x="578" y="602">6</text>
+  <text class="note-h" x="594" y="603">Check the request</text>
+  <text class="note-t" x="574" y="623">PKCE with S256</text>
+  <text class="note-t" x="574" y="640">redirect_uri is listed</text>
+  <text class="note-t" x="574" y="657">scopes are allowed</text>
+
+  <!-- 7: consent -->
+  <line class="req" x1="758" y1="710" x2="112" y2="710" marker-end="url(#req)"/>
+  <circle class="badge" cx="770" cy="710" r="10"/><text class="badge-n" x="770" y="714">7</text>
+  <text class="label" x="440" y="700">Login and consent screen</text>
+  <text class="sub" x="440" y="728">the app's domain, scope groups</text>
+  <line class="req" x1="112" y1="765" x2="768" y2="765" marker-end="url(#req)"/>
+  <text class="label" x="440" y="755">Approve, narrow or deny</text>
+
+  <!-- 8: redirect back -->
+  <line class="req" x1="758" y1="825" x2="112" y2="825" marker-end="url(#req)"/>
+  <circle class="badge" cx="770" cy="825" r="10"/><text class="badge-n" x="770" y="829">8</text>
+  <text class="label" x="440" y="815">Redirect to redirect_uri</text>
+  <text class="sub" x="440" y="843">code, state, iss</text>
+  <line class="req" x1="112" y1="875" x2="328" y2="875" marker-end="url(#req)"/>
+  <text class="label" x="220" y="865">Callback</text>
+
+  <!-- 9: app checks -->
+  <rect class="note" x="340" y="893" width="202" height="70" rx="6"/>
+  <circle class="badge" cx="358" cy="911" r="9"/><text class="badge-n" x="358" y="915">9</text>
+  <text class="note-h" x="374" y="916">Check the response</text>
+  <text class="note-t" x="354" y="936">state matches</text>
+  <text class="note-t" x="354" y="953">iss = discovered issuer</text>
+
+  <!-- Exchange -->
+  <text class="phase" x="30" y="990">Exchange and upload</text>
+
+  <!-- 10: token -->
+  <line class="req" x1="342" y1="1015" x2="768" y2="1015" marker-end="url(#req)"/>
+  <circle class="badge" cx="330" cy="1015" r="10"/><text class="badge-n" x="330" y="1019">10</text>
+  <text class="label" x="555" y="1005">POST the token endpoint</text>
+  <text class="sub" x="555" y="1033">code, code_verifier</text>
+  <line class="res" x1="768" y1="1065" x2="332" y2="1065" marker-end="url(#res)"/>
+  <text class="reply" x="550" y="1057">access and refresh token, scope, me</text>
+
+  <!-- 11: upload -->
+  <line class="req" x1="342" y1="1110" x2="768" y2="1110" marker-end="url(#req)"/>
+  <circle class="badge" cx="330" cy="1110" r="10"/><text class="badge-n" x="330" y="1114">11</text>
+  <text class="label" x="555" y="1100">PUT a file at storage_base</text>
+  <text class="sub" x="555" y="1128">Bearer token, If-Match</text>
+  <line class="res" x1="768" y1="1160" x2="332" y2="1160" marker-end="url(#res)"/>
+  <text class="reply" x="550" y="1152">200 or 201, ETag</text>
+</svg>

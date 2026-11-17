@@ -61,6 +61,10 @@ The new parts are the configuration document, the scope syntax, the rules for pa
 6. **Upload.** The app `PUT`s files with its bearer token, using ETags to avoid overwriting concurrent changes.
 7. **Read.** Anyone reads the published files at their public URL, without a token. An app that needs the latest version, e.g. to change a file, reads it at `storage_base` with its token, which bypasses caches.
 
+![Sequence diagram: the app discovers the PUPS server through host-meta.json and the configuration document, redirects the owner's browser to the authorization endpoint, the server fetches the app's client metadata and shows the consent screen, the browser returns to the app with a code, and the app redeems it for tokens and uploads files.](diagrams/RFC-6-authorization-flow.svg)
+
+The diagram numbers its steps on its own: steps 1–3 are discovery, 4–9 authorization with the app's identification and the owner's consent, 10 the code exchange and 11 an upload. The owner's domain and the PUPS server are often the same host; they differ when PUPS runs on a subdomain such as `storage.tim.example.com` (see [Serving discovery documents](#serving-discovery-documents)).
+
 ## Discovery
 
 ### Starting point
