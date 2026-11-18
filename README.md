@@ -31,6 +31,7 @@ All of this while:
 | [RFC-5: Comment HTML and Markdown](RFC-5-Comment-HTML.md) | The formatting a comment or group post may use when one feed submits it to another. |
 | [RFC-6: Personal Upload Server (PUPS)](RFC-6-Personal-Upload-Server.md) | Lets apps write files to the user's own domain with standard OAuth, and sign the user in with their domain. |
 | [RFC-7: PUPS Feeds](RFC-7-Feed-Publishing-with-PUPS.md) | Conventions for apps that publish a blog feed on the user's domain through PUPS. |
+| [RFC-8: Fallback HTML](RFC-8-Fallback-HTML.md) | HTML in a post that only readers without a particular extension show, so feeds can adopt new extensions without losing older readers. |
 
 ## What's missing
 

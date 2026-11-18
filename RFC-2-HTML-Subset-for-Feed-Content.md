@@ -67,7 +67,7 @@ These attributes are allowed on every element:
 | `title`, `lang`, `dir` | As in HTML. Use `dir` (not Unicode direction marks) for right-to-left text. |
 | `style` | Only the properties in [CSS](#css) survive. |
 | `id` | Kept, but readers may prefix it (Downread writes `id="uc-notes"` for `id="notes"`) so it can't clash with the reader's own ids. See [Links](#links) for what that means for `#fragment` links. |
-| `class` | Removed, except the classes that identify an [embed](#script-embeds). Readers don't have the site's stylesheet, so a class has no effect anyway. |
+| `class` | Removed, except the classes that identify an [embed](#script-embeds) and the `without-extension-*` classes of [Fallback HTML (RFC-8)](https://github.com/bigwide-net/RFCs/blob/main/RFC-8-Fallback-HTML.md). Readers don't have the site's stylesheet, so any other class has no effect anyway. |
 
 `data-*` attributes are removed, except the ones listed for embeds. All event handler attributes (`onclick`, `onload`, …) are removed.
 
