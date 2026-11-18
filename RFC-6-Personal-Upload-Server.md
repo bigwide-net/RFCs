@@ -240,16 +240,16 @@ If the client or the redirect URI is invalid, the server shows an error page and
 
 The owner authenticates (see [Owner authentication](#owner-authentication)) and sees the consent screen:
 
-- **The app's real domain in large type**, the client host. `client_name` and the logo are self-declared, and the screen makes that clear by showing them smaller and next to the domain.
+- **The app's real domain in large type**, the client host, with the logo, and the question whether the owner meant to log in with the app, named by its `client_name` (or the client host if it has none): "Did you mean to log in with “Downread”?". The name and logo are self-declared; the question lets the owner notice an app they didn't open, without suggesting that the app is suspicious.
 - A **"new app"** notice if this `client_id` has never been approved before.
 - A note that **the app runs on this computer** if the redirect URI is a loopback address.
-- The scopes in **at most four groups**, in this order:
+- The scopes in **at most four groups**, introduced with the client host ("app.example may then"), in this order:
   1. **Identity**: "learn that you are tim.example.com". It is always shown and can't be unchecked, because every token response carries `me`. With `identify` alone the whole screen reads "Sign in to app.example as tim.example.com".
   2. **App data**: "store its own data", for `write:/appdata/<client-host>/`.
   3. **Feeds**: "manage your feeds", for `/feed.json`, `/feed/` and paths inside it, and `/.well-known/following.opml`.
   4. **Profile**: "manage your profile", for all other well-known paths.
 
-  A group appears only if the request contains one of its scopes (identity always does). **Feeds and profile are visibly marked as outside the app's own directory**, and need step-up confirmation.
+  A group appears only if the request contains one of its scopes (identity always does). Feeds and profile need step-up confirmation. The screen does not mark them with technical warnings such as "outside the app's own directory": the group names say what the app may do.
 - A checkbox per group, which grants or drops all of the group's scopes together, and Approve / Deny.
 - The details of each group in an **expandable section, collapsed by default**: each scope in plain words, e.g. "its own folder (`/appdata/app.example/`)", "your feed (`/feed.json`)" or "your profile (`/.well-known/about.md`)", and the link relations and properties the scopes allow in `host-meta.json`.
 
@@ -731,10 +731,10 @@ Fetching a URL that anyone can put in an authorization request makes the server 
 
 ### Consent and app identity
 
-- `client_name` and `logo_uri` are self-declared. The consent screen shows the client host prominently, and the "new app" notice warns when an app is unknown.
+- `client_name` and `logo_uri` are self-declared. The consent screen shows the client host prominently, asks whether the owner meant to log in with the app, and the "new app" notice says when an app is unknown.
 - `client_uri` and `logo_uri` must be on the client host, with or without a leading `www.`. A parent domain is never accepted: a client on a shared hosting subdomain (`alice.github.io`) could otherwise present itself with the platform's URL and logo, and owners don't read subdomains. A client ID on someone else's domain is not that app's identity.
 - The consent page carries a CSRF token and can't be framed (`X-Frame-Options: DENY`, `frame-ancestors 'none'`).
-- Every scope outside the app's own directory is visibly marked and needs step-up confirmation. Write access includes deletion: an app with a well-known scope can delete or replace the owner's profile or feed.
+- Every scope outside the app's own directory is in the feeds or profile group and needs step-up confirmation. Write access includes deletion: an app with a well-known scope can delete or replace the owner's profile or feed.
 
 ### Uploaded content
 
