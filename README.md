@@ -34,12 +34,13 @@ All of this while:
 | [RFC-8: Fallback HTML](RFC-8-Fallback-HTML.md) | HTML in a post that only readers without a particular extension show, so feeds can adopt new extensions without losing older readers. |
 | [RFC-9: Feed Actions](RFC-9-Feed-Actions.md) | Buttons, choices and inputs on JSON Feed items and feeds, such as moderating submissions or voting in a poll, sent to the publisher's API with a plain `POST`. |
 | [RFC-10: Identity Tokens](RFC-10-Identity-Tokens.md) | Lets an app prove to any server that it acts for the owner of a domain, with a short-lived token from their PUPS server, e.g. to vote in a poll as `@tim.example.com`. |
+| [RFC-11: Mentions](RFC-11-Mentions.md) | Tells a domain that a post names it, as in *@tim.example.com*, or replies to one of its posts or comments, with a Webmention to the endpoint in its `host-meta.json`. Sent by the system that publishes the post. |
+| [RFC-12: Inbox Feeds](RFC-12-Inbox-Feeds.md) | A private JSON Feed at `/pups/private/inbox.json` on the owner's PUPS server, with their mentions and the comments awaiting their approval. One system writes it; the owner's readers show it as their inbox, optionally with actions such as approve, reject or block. |
 
 ## What's missing
 
 The main gaps that the RFCs don't cover yet:
 
-- **Notifications.** An inbox of mentions and replies for each user, so they learn when someone answers them without checking every feed they ever commented on.
 - **Blocking users.** A way for authors and group owners to keep particular people out of their comments and discussions, and for readers to hide them.
 - **Card-based feeds for photos and videos.** A feed format, or conventions for existing ones, that readers can show as cards or a vertical video stream, like Instagram and TikTok.
 - **Permanent links to posts in feeds.** Feeds name only an HTML page as a post's permalink. Readers need a stable address for the post in a feed as well: a permanent archive that keeps each post at the same URL, like the archives in [RFC-7](RFC-7-Feed-Publishing-with-PUPS.md), where the archive's URL plus `#id` addresses an item forever. Links in a post could then name both, as in `<a href="https://example.com/posts/42" data-feed-href="https://example.com/feed/feed.000003.json#42">`, so that readers which support it open the linked post right in the reader, and all others open the web page.
