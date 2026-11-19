@@ -109,7 +109,7 @@ A reader that supports at least one extension with a fallback processes the body
 
 1. Parse the HTML (`<content:encoded>`, `<description>`, Atom `<content type="html">`, JSON Feed `content_html`).
 2. **Remove** every element that carries a `without-extension-<name>` class for an extension the reader supports, together with its content.
-3. Sanitize the rest as usual, e.g. with the Feed HTML allowlist (RFC-2). RFC-2 keeps `without-extension-*` classes, so the fallbacks of extensions the reader doesn't support survive sanitization. Without a matching style rule, their class has no effect, and their content is shown as ordinary HTML.
+3. Sanitize the rest as usual, e.g. with the Feed HTML allowlist (RFC-2). RFC-2 lets a reader that supports this RFC keep `without-extension-*` classes, so the fallbacks of extensions the reader doesn't support survive sanitization. Without a matching style rule, their class has no effect, and their content is shown as ordinary HTML.
 
 Everything derived from the body uses the result of step 2: excerpts, previews, notifications, read-time estimates, full-text search and text-to-speech.
 

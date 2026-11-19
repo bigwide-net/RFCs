@@ -6,7 +6,7 @@ Latest version on GitHub: [RFC-6-Personal-Upload-Server.md](https://github.com/b
 
 ## Summary
 
-This proposal defines the **Personal Upload Server (PUPS)**: a small server, run by one person on their own domain, that lets apps upload files to that domain. An app only needs to know the domain. It discovers the server, asks the owner for permission with standard OAuth, and gets a token that can create, replace and delete files under the paths the owner approved. Everything an app uploads is public, served as static files from the owner's domain.
+This proposal defines the **Personal Upload Server (PUPS)**: a small server, run by one person on their own domain, that lets apps upload files to that domain. An app only needs to know the domain. It discovers the server, asks the owner for permission with standard OAuth, and gets a token that can create, replace and delete files under the paths the owner approved. Everything an app uploads is public, served from the owner's domain, except in two small [private areas](#private-areas) that only the owner's apps can read: a `private/` folder in each app's own directory, and `/pups/private/` for private files that extensions define, such as an inbox.
 
 It is the write side of feed-based personal publishing:
 
@@ -39,7 +39,7 @@ The new parts are the configuration document, the scope syntax, the rules for pa
 **Non-goals**
 
 - **Website content.** Apps never write HTML, JavaScript or CSS. PUPS stores data and media, not web pages.
-- **Private storage.** Every stored file is public. There is no read scope and no access control on reading. A token on a read only bypasses caches (see [Fresh reads](#fresh-reads)); it grants no access.
+- **Shared or access-controlled storage.** Files are public, or, in the [private areas](#private-areas), readable only by apps the owner approved. There is no sharing with other people, no access lists and no encryption: private files are protected from the public, not from the host.
 - **Multi-user hosting.** One installation has exactly one owner, and the owner is the domain.
 - **Directory listings, search, quotas per app, synchronization.** Clients keep track of their own files.
 - **Feed formats, federation and notifications.** Those belong to other specs (RFC-4, SocialSpec, …).
@@ -78,6 +78,7 @@ PUPS invents as little as possible. Most of it is existing standards, some of th
 - **The list of well-known paths**: the main feed, the SocialSpec files, the site's images and pages, and the site properties and link relations that belong to them. See [Well-known paths](#well-known-paths).
 - **Rules for paths, file types and serving**: an allowlist of data and media types, with the headers every upload is served with, so that uploads can't run on the server or in the browser. See [Paths](#paths), [File types](#file-types) and [Serving files](#serving-files).
 - **Fresh reads**: a bearer token on a `GET` bypasses caches, but grants nothing. See [Fresh reads](#fresh-reads).
+- **Private areas**: `/appdata/<client-host>/private/` and `/pups/private/`, read with a token whose scope covers them, and the `read:` scope for private paths. See [Private areas](#private-areas).
 - **The POST fallback** for hosts that block `PUT` and `DELETE`. See [POST fallback](#post-fallback).
 - **The host-meta endpoint**, through which apps add links to and set properties in `host-meta.json` without being able to touch the owner's entries. See [Editing host-meta.json](#editing-host-metajson).
 - **Requirements for the owner's side**: what the consent screen shows, step-up confirmation for well-known paths, and the two deployment modes. See [Consent](#consent), [Owner authentication](#owner-authentication) and [Deployment modes](#deployment-modes).
@@ -243,13 +244,14 @@ The owner authenticates (see [Owner authentication](#owner-authentication)) and 
 - **The app's real domain in large type**, the client host, with the logo, and the question whether the owner meant to log in with the app, named by its `client_name` (or the client host if it has none): "Did you mean to log in with “Downread”?". The name and logo are self-declared; the question lets the owner notice an app they didn't open, without suggesting that the app is suspicious.
 - A **"new app"** notice if this `client_id` has never been approved before.
 - A note that **the app runs on this computer** if the redirect URI is a loopback address.
-- The scopes in **at most four groups**, introduced with the client host ("app.example may then"), in this order:
+- The scopes in **at most five groups**, introduced with the client host ("app.example may then"), in this order:
   1. **Identity**: "learn that you are tim.example.com". It is always shown and can't be unchecked, because every token response carries `me`. With `identify` alone the whole screen reads "Sign in to app.example as tim.example.com".
   2. **App data**: "store its own data", for `write:/appdata/<client-host>/`.
   3. **Feeds**: "manage your feeds", for `/feed.json`, `/feed/` and paths inside it, and `/.well-known/following.opml`.
-  4. **Profile**: "manage your profile", for all other well-known paths.
+  4. **Profile**: "manage your profile", for all other well-known paths outside `/pups/private/`.
+  5. **Private data**: "read your private data" for `read:` scopes, or "manage your private data" if the request contains a `write:` scope, for paths in `/pups/private/`.
 
-  A group appears only if the request contains one of its scopes (identity always does). Feeds and profile need step-up confirmation. The screen does not mark them with technical warnings such as "outside the app's own directory": the group names say what the app may do.
+  A group appears only if the request contains one of its scopes (identity always does). Feeds, profile and private data need step-up confirmation. The screen does not mark them with technical warnings such as "outside the app's own directory": the group names say what the app may do.
 - A checkbox per group, which grants or drops all of the group's scopes together, and Approve / Deny.
 - The details of each group in an **expandable section, collapsed by default**: each scope in plain words, e.g. "its own folder (`/appdata/app.example/`)", "your feed (`/feed.json`)" or "your profile (`/.well-known/about.md`)", and the link relations and properties the scopes allow in `host-meta.json`.
 
@@ -277,9 +279,10 @@ Scopes are plain OAuth scope strings, separated by spaces. [RFC 9396](https://ww
 | --- | --- | --- |
 | `identify` | Nothing to write. The token response carries `me`. | No |
 | `write:/appdata/<client-host>/` | Create, replace and delete files in the app's own directory. | No |
-| `write:<well-known path>` | Create, replace and delete the declared well-known file, or files in the declared well-known directory. | Yes |
+| `write:<well-known path>` | Create, replace and delete the declared well-known file, or files in the declared well-known directory. In `/pups/private/`, also read them. | Yes |
+| `read:<private path>` | Read the declared private file in `/pups/private/`, or files in the declared private directory. | Yes |
 
-**Syntax.** `write:<path-prefix>`. The prefix starts with `/` and uses only unreserved URL characters, `/` and percent-encoding. A prefix ending in `/` covers the whole subtree; any other prefix covers exactly one file. `write` always includes create, replace and delete. There is no read scope, because everything stored is public.
+**Syntax.** `write:<path-prefix>`. The prefix starts with `/` and uses only unreserved URL characters, `/` and percent-encoding. A prefix ending in `/` covers the whole subtree; any other prefix covers exactly one file. `write` always includes create, replace and delete, and, for [private](#private-areas) files, reading. Public files need no read scope. The only read scope is `read:<path-prefix>`, for a private path in `/pups/private/`: it lets the app read the files there, without writing them.
 
 **Only two kinds of write scope exist**:
 
@@ -298,7 +301,7 @@ The server offers no directory listing. A client that needs to know what it has 
 
 By default, an app stores everything in `/appdata/<client-host>/`, e.g. `/appdata/app.example/`. How it organizes that directory is up to the app. The consent screen calls it "the app's own data", and granting it is a single click.
 
-The app's directory is **not private**: its files are public like all others, and URLs are easy to guess. Apps must not store secrets, tokens or anything the user would not publish.
+The app's directory is **public**, with one exception: its subdirectory `private/`, e.g. `/appdata/app.example/private/`, which only the app can read (see [Private areas](#private-areas)). All other files are public like any other, and URLs are easy to guess. Apps must not store anything there that the user would not publish.
 
 ### Well-known paths
 
@@ -338,6 +341,8 @@ A server may declare the following paths. All of them live at the domain root, s
 | `/pups/images/` | The site's profile images: avatar and banner | this RFC | your site's profile images | — | `https://bigwide.net/ns/avatar` (URL), `https://bigwide.net/ns/banner` (URL) |
 | `/pups/pages/` | The site's pages and its footer, as Markdown | this RFC | your site's pages | `https://bigwide.net/ns/webpup-pages`, with the link property `https://bigwide.net/ns/webpup-hidden` | `https://bigwide.net/ns/webpup-footer` (URL) |
 
+Paths inside `/pups/private/` are added to this list by the specs that define them, e.g. a spec for notifications that keeps an inbox feed in `/pups/private/inbox/`. They have no `url`, link relations or properties, see [Private areas](#private-areas). There are none yet.
+
 The link relation `https://bigwide.net/ns/feed` registers a feed in `host-meta.json` (see [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#registering-feeds-in-host-metajson)). It is not single-valued: a domain can have several feeds, and neither is `https://bigwide.net/ns/webpup-pages` (see [Pages](#pages)). Only `avatar`, `banner` and `webpup-footer` take a URL (see [Site properties](#site-properties)). The details on the consent screen describe a scope for a listed path with the text from the table, e.g. "your feed (`/feed.json`)". A scope inside `/feed/` is described by its path, e.g. "`/feed/photos.json`". `/feed.json`, `/feed/` and `/.well-known/following.opml` are in the consent screen's group "manage your feeds", the others in "manage your profile" (see [Consent](#consent)).
 
 **`/feed.json`** is the owner's main feed: a [JSON Feed 1.1](https://www.jsonfeed.org/version/1.1/) document, with the extensions of the bigwide.net RFCs where they are used, e.g. [RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md) sources and [RFC-3](https://github.com/bigwide-net/RFCs/blob/main/RFC-3-Podcasting-for-JSON-Feeds.md) podcasting. Readers and apps find it on the domain without any discovery, and it can serve as the author feed of [RFC-4](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) comments. Its `feed_url` is `https://<owner host>/feed.json`. Like every `.json` file, it is served as `application/json`.
@@ -348,7 +353,7 @@ Several apps may write the main feed. [Feed Publishing with PUPS (RFC-7)](https:
 
 `/feed/` also holds the owner's other feeds, each with a name: the feed `photos` is `/feed/photos.json`, and its files are in `/feed/photos/`. An app that writes only such a feed asks for its scopes, `write:/feed/photos.json write:/feed/photos/`. The main feed's scope `write:/feed/` covers all of them. RFC-7 defines the layout and the conventions, which are the same as for the main feed.
 
-**`/pups/images/`** holds the images that describe the site as a whole: the avatar and the banner that a profile or a web page of the domain shows, e.g. `https://tim.example.com/pups/images/avatar-k3x9.png`. Apps store only images there (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`, `.svg`). Like feed icons (RFC-7), every new image gets a new file name, and the app deletes the old file after it has set the property to the new URL. `/pups/` itself belongs to the server, which may serve its own pages and endpoints there (e.g. the `host_meta_endpoint`); only the subdirectories `/pups/images/` and `/pups/pages/` may be declared. A server that can't serve the domain root may still declare them without a `url`: the files are then at `public_base` + `pups/images/` and `pups/pages/`, which is fine for links and for properties that take a URL.
+**`/pups/images/`** holds the images that describe the site as a whole: the avatar and the banner that a profile or a web page of the domain shows, e.g. `https://tim.example.com/pups/images/avatar-k3x9.png`. Apps store only images there (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`, `.svg`). Like feed icons (RFC-7), every new image gets a new file name, and the app deletes the old file after it has set the property to the new URL. `/pups/` itself belongs to the server, which may serve its own pages and endpoints there (e.g. the `host_meta_endpoint`); only the subdirectories `/pups/images/` and `/pups/pages/`, and paths inside `/pups/private/` (see [Private areas](#private-areas)), may be declared. A server that can't serve the domain root may still declare them without a `url`: the files are then at `public_base` + `pups/images/` and `pups/pages/`, which is fine for links and for properties that take a URL.
 
 **`/pups/pages/`** holds the site's pages: Markdown files (`.md`) that a web page of the domain shows next to its feeds, such as "Now", "Uses" or an imprint, e.g. `https://tim.example.com/pups/pages/now.md`, and the images they show, in `/pups/pages/images/`. Apps store nothing else there. A page becomes part of the site when it is linked in `host-meta.json` (see [Pages](#pages)); the footer is a page too, linked by the property `https://bigwide.net/ns/webpup-footer`.
 
@@ -391,6 +396,39 @@ A link with the rel `https://bigwide.net/ns/webpup-pages` makes a Markdown file 
 The public URL of a file is `public_base` + its path, or, for a file under a well-known entry with a `url`, that `url` plus the rest of the path. An app uses public URLs whenever it links to its files, e.g. as the `source` of an RFC-4 webmention.
 
 `public_base` should be on the owner's own host. A different host (a public R2 domain, a CDN host) works for readers, but breaks anything that ties a file to the owner's identity by host name, such as RFC-4's `requireSocialSpec` (see [Feed Submissions](#using-pups-for-feed-submissions-rfc-4)).
+
+### Private areas
+
+Two areas hold files that only the owner's apps can read. They are for personal data that belongs on the owner's domain but not in public: drafts, settings, read positions, or an inbox of notifications.
+
+| Area | For | Who can read and write |
+| --- | --- | --- |
+| `/appdata/<client-host>/private/` | The app's own private data | The app, with its scope `write:/appdata/<client-host>/`. No other scope is needed. |
+| `/pups/private/` | Private files that an extension of this RFC defines, e.g. an inbox feed that several apps read | Apps that hold a `read:` or `write:` scope for the declared path |
+
+Every server offers both areas, and must meet every rule in this section.
+
+**Paths in `/pups/private/`.** Like the other well-known paths, each one is defined by a spec, the extension that uses it, and listed in the [list of well-known paths](#the-list-of-well-known-paths). A server declares the ones it offers in `well_known_paths`, without `url`, `rels`, `properties` or `link_properties`, because private files are never linked. Apps request them with `read:` or `write:` scopes, which are in the consent group "private data" and need step-up confirmation. Like other well-known paths, they are shared: every app that holds the scope reads and writes the same files.
+
+**Reading.** A private file is read with `GET` or `HEAD` at `storage_base` + its path, with a bearer token, exactly like a [fresh read](#fresh-reads). The server decides in this order, before it looks for the file, so that its answer never tells whether a file exists to someone who may not read it:
+
+1. No bearer token: `401` with `WWW-Authenticate: Bearer`.
+2. An invalid, expired or revoked token: `401` with `WWW-Authenticate: Bearer error="invalid_token"`.
+3. A valid token whose scopes don't cover the path, by a `write:` scope or, in `/pups/private/`, a `read:` scope: `403` with `error="insufficient_scope"`.
+4. The file doesn't exist: `404`.
+5. Otherwise `200`, with the file and the same headers as a fresh read.
+
+Writing works as for any other file, with the same scopes, and `write:` covers reading as well.
+
+**Never public.** Private files have no public URL, and are never served without a token that covers them, whatever URL the request uses: not at `public_base`, not at a well-known `url`, and not through a fallback to another server. A server that falls back to the website's origin for files it doesn't have must not do so for private paths.
+
+**Storage.** Private files must be stored where nothing serves them without PUPS: not in a public bucket, and not in a directory that the web server serves on its own. A server whose `public_base` serves its storage directly, such as a public bucket, keeps private files in a separate storage.
+
+**Caching.** Every response for a private path, errors included, carries `Cache-Control: no-store` (`private, no-store` for a `200`) and `Vary: Authorization`, so that no cache stores a private file, or a `404` that would later hide it from the owner. A server behind a CDN that may not honour these headers, or that ignores `Vary`, configures the CDN to bypass its cache for both private areas.
+
+**Links and properties.** Private files can't be the `href` of a link or the value of a property in `host-meta.json` (see [Editing host-meta.json](#editing-host-metajson)).
+
+**Not encrypted.** "Private" means hidden from the public. Whoever runs the server or the hosting can read private files. Apps that store data the host must not see encrypt it before uploading it.
 
 ## Tokens
 
@@ -454,6 +492,7 @@ All writes carry `Authorization: Bearer <access_token>`, and reads may carry it 
 | `DELETE <storage_base><path>` | `If-Match` optional | `204 No Content` | Delete; `404` if missing, `412` if the ETag doesn't match. |
 | `GET`/`HEAD <storage_base><path>` | none | `200` + `ETag` | Public read, no token needed. May come from a cache. |
 | `GET`/`HEAD <storage_base><path>` | `Authorization` | `200` + `ETag` | Fresh read: the latest version, never from a cache. See [Fresh reads](#fresh-reads). |
+| `GET`/`HEAD <storage_base><private path>` | `Authorization` with a covering scope | `200` + `ETag` | Private read; `401` without a valid token, `403` without a covering scope. See [Private areas](#private-areas). |
 
 The body of a `PUT` is the raw file. `Content-Length` should be sent; the server rejects bodies over `max_upload_bytes` with `413` without storing anything, also for chunked uploads. A failed write never leaves a partial file: the server writes atomically.
 
@@ -461,7 +500,7 @@ The body of a `PUT` is the raw file. `Content-Length` should be sent; the server
 
 Caches between the app and the server can serve an old version of a file for a while after a write: a CDN in front of the whole domain, a hosting provider's caching proxy, the browser's cache. Users then don't see their own changes, and read-modify-write fails with `412` again and again, because every attempt reads the same old ETag. Therefore a `GET` or `HEAD` at `storage_base` may carry the app's bearer token, and is then a **fresh read**:
 
-- **Any valid access token of this server** is accepted, whatever its scopes, `identify` included. All files are public, so the token grants nothing; it only makes the request one that caches pass on. Shared caches don't store responses to requests with `Authorization` ([RFC 9111](https://www.rfc-editor.org/rfc/rfc9111#section-3.5)), and common caching proxies pass such requests through.
+- **Any valid access token of this server** is accepted for public files, whatever its scopes, `identify` included. Public files are public anyway, so the token grants nothing; it only makes the request one that caches pass on. Private files need a token whose scope covers them, see [Private areas](#private-areas). Shared caches don't store responses to requests with `Authorization` ([RFC 9111](https://www.rfc-editor.org/rfc/rfc9111#section-3.5)), and common caching proxies pass such requests through.
 - **An invalid, expired or revoked token** gets `401` with `WWW-Authenticate: Bearer error="invalid_token"`, as for writes. The server never falls back to a public read, so the app learns that it must refresh.
 - **The latest version.** The server answers from its storage, never from a cache of its own (CDN edge, page cache, object cache), and the response reflects every write that completed before the request was received. Its ETag is the one that a following `If-Match` is compared with.
 - **Headers.** The response carries `Cache-Control: private, no-store` instead of the usual caching header, and otherwise the same headers as any uploaded file (see [Serving files](#serving-files)). Conditional requests (`If-None-Match` → `304`) and ranges work as in public reads.
@@ -503,7 +542,7 @@ Errors follow RFC 6750 and carry a JSON body `{"error": "<code>", "message": "<t
 | `400` | `invalid_path` | The path breaks the rules above. |
 | `401` | `invalid_token` | Missing, expired or revoked token. With `WWW-Authenticate: Bearer error="invalid_token"`. |
 | `403` | `insufficient_scope` | The path is outside the granted scope. With `WWW-Authenticate: Bearer error="insufficient_scope"`. |
-| `404` | `not_found` | `DELETE` of a missing file. |
+| `404` | `not_found` | `DELETE` of a missing file, or a read of a missing private file. |
 | `412` | `precondition_failed` | `If-Match` or `If-None-Match` failed. |
 | `413` | `too_large` | Over `max_upload_bytes`. |
 | `415` | `unsupported_type` | Extension not allowed, or `Content-Type` doesn't match it. |
@@ -646,7 +685,7 @@ Responses: `201` added or set, `204` removed or ordered, `400` invalid request, 
 ### Links
 
 - **Ownership marker.** Every link PUPS adds carries `"properties": {"https://bigwide.net/ns/pups#client": "<client_id>"}`. Links without it belong to the owner and are never changed or removed by PUPS.
-- **Own files only.** `href` must be the public URL of a file inside the app's granted scope. An app can never point the owner's links to another domain or to another app's files.
+- **Own files only.** `href` must be the public URL of a file inside the app's granted scope, never a [private](#private-areas) file. An app can never point the owner's links to another domain or to another app's files.
 - **Allowed rels.** For a file under a well-known path, only the `rels` declared for that path. For a file in `/appdata/`, only URI rels on the client host, with or without `www.` (`https://app.example/rel/…`). Nobody can register the PUPS rel itself or identity rels such as WebFinger's `http://webfinger.net/rel/profile-page`, `me`, `authorization_endpoint` or `openid`.
 - **Conflicts.** For rels that the list of well-known paths defines as single-valued, an existing link (the owner's or another app's) is not replaced; the request gets `409`.
 - **Titles and properties.** `titles` maps a BCP 47 language tag or `default` to a title, as in [RFC 7033](https://www.rfc-editor.org/rfc/rfc7033#section-4.4.4.4): at most 20 entries, each title a string of at most 255 characters without control characters. `properties` may hold only the `link_properties` declared for the well-known path of the `href`, with string values of at most 2,048 characters without control characters; links to `/appdata/` take none. Nobody can set the ownership marker this way.
@@ -660,7 +699,7 @@ Top-level `properties` in `host-meta.json` ([RFC 6415](https://www.rfc-editor.or
 
 - **Well-known only.** An app may set only the `properties` declared for a well-known path in `well_known_paths`, and only if it holds that path's scope. There are no app-specific properties: an app that needs more, or structured data, writes its own file and links to it. Nobody can set PUPS's own properties (`https://bigwide.net/ns/pups#…`) or properties that name the domain's identity or its OAuth server.
 - **No owner.** Properties are shared by the owner and every app that holds the scope. Any of them may set or replace the value; the last write wins. Apps can't remove properties; only the owner can. PUPS doesn't track who set a property.
-- **Values.** A string of at most 2,048 characters, without control characters. Setting `null` or an empty string is not possible. If the list of well-known paths says that a property's value is a URL, it must be the public URL of a file inside the app's granted scope, as for link `href`s.
+- **Values.** A string of at most 2,048 characters, without control characters. Setting `null` or an empty string is not possible. If the list of well-known paths says that a property's value is a URL, it must be the public URL of a file inside the app's granted scope, and not a private file, as for link `href`s.
 
 ### Consent and lifecycle
 
@@ -706,6 +745,7 @@ PUPS hands write access to the domain that is the owner's identity to third-part
 | A script on the owner's website (XSS in a CMS etc.) | Approve grants or revoke apps silently, steal the owner's login | No cookies in same-domain mode, step-up confirmation, auth subdomain, passkeys |
 | A malicious client metadata host | Use the server to reach internal networks (SSRF), impersonate another app | CIMD fetch restrictions, `client_uri` and `logo_uri` on the client host only, client host on the consent screen |
 | A network or mix-up attacker | Steal codes or tokens, inject a code from another server | HTTPS only, PKCE S256, `iss` check, exact redirect URIs |
+| Anyone on the internet | Read private files | Token and scope check on every read, private files kept out of public storage, `no-store` on every private response |
 | Someone who copied a token | Use it elsewhere, or as proof of identity | Short-lived access tokens, rotation with reuse detection, `me` only from the app's own exchange |
 | An attacker who gets the domain | Sign in as the owner everywhere | None in the protocol: domain control is identity |
 
@@ -762,7 +802,8 @@ An approved app can publish anything it likes in its own directory, under the ow
 
 ### Privacy
 
-- Everything uploaded is public, including `/appdata/`. Apps must not upload private data, and must make that clear to the user. Unlisted URLs are not secret.
+- Everything uploaded outside the [private areas](#private-areas) is public, including the rest of `/appdata/`. Apps must not upload private data anywhere else, and must make that clear to the user. Unlisted URLs are not secret.
+- Private files are protected from the public, not from whoever runs the server or the hosting: they are not encrypted. Apps that need more encrypt the data themselves before uploading it.
 - Apps learn the owner's domain, which often is their name.
 - SocialSpec's `contact.vcf` typically contains an e-mail address or phone number; apps that write it should show the user what will be published.
 
@@ -801,7 +842,7 @@ If PUPS can't write the domain root (e.g. because the website runs on another ho
 
 - **IndieAuth** also identifies apps by URL and returns `me`. PUPS uses the IETF CIMD draft instead, which is the direction OAuth itself has taken, and discovers the server through `host-meta.json` instead of HTML links, so that the user's site needs no HTML at all. A future version could additionally accept IndieAuth clients.
 - **Micropub** lets apps create posts that the server turns into web pages. PUPS stores files that the app has fully formed, and never produces HTML, which keeps the server small and the security model simple.
-- **remoteStorage** is per-user storage for app data, with read access and its own discovery via WebFinger. PUPS is write-only, public, and designed to publish files at the locations other specs expect.
+- **remoteStorage** is per-user storage for app data, with read access and its own discovery via WebFinger. PUPS is mostly public, with only small private areas for the owner's apps, and designed to publish files at the locations other specs expect.
 - **Solid** offers private, access-controlled storage with linked-data semantics. PUPS deliberately does much less, so that it can run on shared PHP hosting.
 
 ## Conformance
@@ -822,6 +863,7 @@ A test runner takes a base URL and a test client with its own CIMD document, and
 - Fresh reads: `GET` and `HEAD` at `storage_base` with a valid token of any scope, `identify` included, return the latest write with its ETag and `Cache-Control: private, no-store`, also right after a write; an invalid, expired or revoked token → `401`; without a token, the public read is unchanged and carries `Vary: Authorization`.
 - CORS on preflights and on every response, including errors.
 - All upload tests repeated through `post_endpoint` when it is declared.
+- Private areas: a private file can be written and read back with a token whose scope covers it; without a token → `401`, with an invalid token → `401`, with a valid token of another app or without a covering scope → `403`, a missing file with a covering token → `404`, all with `Cache-Control: no-store` and `Vary: Authorization`; the file can't be read at `public_base`, at a well-known `url` or through any other route without a covering token; a `read:` token can read but not write; host-meta links and URL properties pointing to private files → `403`.
 - An `identify`-only token can't write.
 - Same-domain mode sets no cookie on any response.
 - `host-meta.json` links: owner entries untouched, foreign `href`s and reserved rels rejected, concurrent changes retried, invalid JSON refused with `409`, limits enforced, `/appdata/` links removed on revocation.
@@ -833,5 +875,6 @@ A test runner takes a base URL and a test client with its own CIMD document, and
 
 - **Names and URIs.** The link relation `https://bigwide.net/ns/personal-storage`, the ownership property `https://bigwide.net/ns/pups#client`, the site properties `https://bigwide.net/ns/name`, `title`, `summary`, `theme-color`, `language`, `avatar`, `banner` and `webpup-footer`, the pages relation `https://bigwide.net/ns/webpup-pages` and its link property `webpup-hidden`, and the feed relation `https://bigwide.net/ns/feed` are placeholders, to be published on bigwide.net.
 - **The list of well-known paths.** This RFC defines the initial list. Open: its home on bigwide.net, how new entries are proposed and accepted, and which link relations future entries bring.
+- **Sharing private files.** Should a later version let the owner share a private file with other people, e.g. with [Identity Tokens (RFC-10)](https://github.com/bigwide-net/RFCs/blob/main/RFC-10-Identity-Tokens.md)?
 - **Sender-constrained tokens.** Should a later version support [DPoP](https://www.rfc-editor.org/rfc/rfc9449), so that a copied token is useless without the app's key?
 - **More types.** Are there file types that SocialSpec or feed apps need beyond the allowlist (e.g. `.ics` calendars, `.pdf`)?

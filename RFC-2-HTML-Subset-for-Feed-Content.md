@@ -67,9 +67,24 @@ These attributes are allowed on every element:
 | `title`, `lang`, `dir` | As in HTML. Use `dir` (not Unicode direction marks) for right-to-left text. |
 | `style` | Only the properties in [CSS](#css) survive. |
 | `id` | Kept, but readers may prefix it (Downread writes `id="uc-notes"` for `id="notes"`) so it can't clash with the reader's own ids. See [Links](#links) for what that means for `#fragment` links. |
-| `class` | Removed, except the classes that identify an [embed](#script-embeds) and the `without-extension-*` classes of [Fallback HTML (RFC-8)](https://github.com/bigwide-net/RFCs/blob/main/RFC-8-Fallback-HTML.md). Readers don't have the site's stylesheet, so any other class has no effect anyway. |
+| `class` | Removed, except the classes of extensions that the reader supports. See [Classes and data attributes](#classes-and-data-attributes). |
 
-`data-*` attributes are removed, except the ones listed for embeds. All event handler attributes (`onclick`, `onload`, …) are removed.
+`data-*` attributes are removed, except the ones of extensions that the reader supports (see below). All event handler attributes (`onclick`, `onload`, …) are removed.
+
+### Classes and data attributes
+
+Readers have neither the site's stylesheet nor its scripts, so a class or a `data-*` attribute has no effect of its own in a reader. Readers therefore remove them all, with one exception: classes and `data-*` attributes that an **extension** defines, and that the reader **supports** as part of that extension. Those are kept, or acted upon, as the extension says.
+
+Examples:
+
+- **Embeds.** The markers and attributes in [Script embeds](#script-embeds), such as `class="twitter-tweet"` or `data-instgrm-permalink`, are kept by readers that support embeds, so that they can load the vendor's script.
+- **Fallback HTML.** [Fallback HTML (RFC-8)](https://github.com/bigwide-net/RFCs/blob/main/RFC-8-Fallback-HTML.md) marks HTML that only readers without a particular extension should show, with the class `without-extension-<name>`. A reader that supports RFC-8 recognizes these classes, removes the elements of the extensions it supports, and may keep the other `without-extension-*` classes through sanitization, so that the code that renders the post can decide. A reader that doesn't support RFC-8 removes the class like any other, and shows the content as ordinary HTML. That is correct, because it doesn't support the extension either.
+
+The rules for extensions:
+
+- A reader keeps a class or `data-*` attribute only if it supports the extension that defines it, and only with values that the extension allows.
+- An extension that defines a class or a `data-*` attribute must make sure that content still makes sense when a reader removes it, following the principle [Degrade to text](#principles).
+- Authors must not rely on any other class or `data-*` attribute: readers remove them.
 
 ### Per element
 
