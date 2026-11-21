@@ -173,6 +173,8 @@ The `href` points to the configuration document. Its path is chosen by the serve
 | `well_known_paths` | The files and directories outside `/appdata/` that apps may ask for. See [Well-known paths](#well-known-paths). Missing: none. |
 | `host_meta_endpoint` | Where apps add links to and set properties in `host-meta.json`. Missing: the server cannot write `host-meta.json`. |
 | `post_endpoint` | Present only if the server cannot accept `PUT` and `DELETE`. Clients must then send all writes there. See [POST fallback](#post-fallback). |
+| `mention_endpoint` | Present if the server has a built-in receiver for [mentions (RFC-11)](https://github.com/bigwide-net/RFCs/blob/main/RFC-11-Mentions.md) that writes the owner's inbox. See [Built-in receiver](#built-in-receiver). |
+| `comment_endpoint` | Present if the server accepts [comments (RFC-4)](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) on posts of the owner's feeds and writes them into the owner's inbox. See [Built-in receiver](#built-in-receiver). |
 | `max_upload_bytes` | **Required.** The largest file the server accepts, in bytes. |
 | `spec_version` | **Required.** The version of this proposal the server implements: `0.1`. |
 
@@ -360,7 +362,7 @@ Several apps may write the main feed. [Feed Publishing with PUPS (RFC-7)](https:
 
 ### Site properties
 
-The top-level properties of `host-meta.json` that describe the site, for profiles, feed readers and web pages that render the domain (e.g. a single-page site that shows the owner's feeds). All are optional; a renderer falls back to its own defaults, never to guesses. Apps set them through the [host-meta endpoint](#editing-host-metajson) with the scope of the listed path.
+The top-level properties of `host-meta.json` that describe the site, for profiles, feed readers and web pages that render the domain (e.g. a single-page site that shows the owner's feeds). All are optional; a renderer falls back to its own defaults, never to guesses. Apps set them through the [host-meta endpoint](#editing-host-metajson) with the scope of the listed path; `post-url-template` has no scope, so apps can't set it.
 
 | Property | Value | Scope |
 | --- | --- | --- |
@@ -372,8 +374,26 @@ The top-level properties of `host-meta.json` that describe the site, for profile
 | `https://bigwide.net/ns/avatar` | URL of a square image (at least 400 × 400 pixels) in `/pups/images/` | `/pups/images/` |
 | `https://bigwide.net/ns/banner` | URL of a wide image (3:1, at least 1500 × 500 pixels) in `/pups/images/` | `/pups/images/` |
 | `https://bigwide.net/ns/webpup-footer` | URL of a Markdown file in `/pups/pages/` that is shown at the bottom of every page of the site, e.g. a copyright line and a link to the imprint | `/pups/pages/` |
+| `https://bigwide.net/ns/post-url-template` | The URL of a post's page on the site, as a template, e.g. `https://tim.example.com/p/{feed}/post/{index}`. See [Post URLs](#post-urls) | none: set by the owner, or by the server that installs the site's renderer |
 
 `avatar`, `banner` and `webpup-footer` take a URL: the public URL of a file inside the app's granted scope, i.e. in `/pups/images/` or `/pups/pages/` (see [Properties](#properties)). A profile's text, its contact details and the people it follows stay in the SocialSpec files; these properties only add what those files don't have.
+
+### Post URLs
+
+The site property `https://bigwide.net/ns/post-url-template` says where the site's renderer shows a single post of a feed ([RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md)). Apps that write the feeds use it to give new posts their `url` (RFC-7, [Post URLs](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#post-urls)), so that readers link to the post's page on the owner's site.
+
+```json
+"https://bigwide.net/ns/post-url-template": "https://tim.example.com/p/{feed}/post/{index}"
+```
+
+- The value is an absolute `https` URL with variables in braces:
+  - `{feed}`: the path of the feed file from the domain root, without `.json`: `feed` for `/feed.json`, `feed/photos` for `/feed/photos.json`;
+  - `{index}`: the item's `_pups.index`;
+  - `{id}`: the item's `id`, percent-encoded like a URI path segment.
+- It contains `{index}` or `{id}`, or both. The other characters are used as they are.
+- It describes the site, not the upload server, so it is in `host-meta.json` and not in the [configuration document](#configuration-document): the renderer may be anything that shows the feeds, e.g. a single-page site or a static site generator.
+- No scope allows apps to set it. The owner sets it, or the server that installs the renderer: a server that installs a renderer at the domain root sets the property to the renderer's template, and removes it, if it still has that value, when it removes the renderer.
+- Without the property, the site has no post pages that apps know of.
 
 ### Pages
 
@@ -824,6 +844,15 @@ Points to watch:
 - **Freshness.** The RFC-4 server fetches the author feed seconds after the upload. A CDN or a long cache lifetime on `public_base` can serve the old version and make the submission fail with `item-not-found`; see [Caching](#serving-files).
 - **CORS.** Uploaded files carry `Access-Control-Allow-Origin: *`, so author feeds can also be read by browser clients, although RFC-4 doesn't require it.
 - **Types.** JSON Feeds are written as `.json` with `application/feed+json` or `application/json`, RSS as `.xml`; both are served as the generic type of their extension, which RFC-4 servers must accept.
+
+## Built-in receiver
+
+A PUPS server may receive what other sites send to its owner, and write it into the owner's [inbox (RFC-12)](https://github.com/bigwide-net/RFCs/blob/main/RFC-12-Inbox-Feeds.md), `/pups/private/inbox.json`, with `pups` as its `writer`. It needs no grant, and nothing to set up. It has two parts, with two endpoints, because they mean different things: a mention asks for attention, a comment to be published.
+
+- **Mentions.** The server receives [RFC-11](https://github.com/bigwide-net/RFCs/blob/main/RFC-11-Mentions.md) mentions at `mention_endpoint`, and links it from `host-meta.json` with the relation `https://bigwide.net/ns/mention`, as RFC-11 allows for a receiver that the PUPS server runs itself. It adds the link once; if the owner removes it, it stays removed.
+- **Comments.** The server accepts [RFC-4](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) comments at `comment_endpoint`, for posts in the owner's feeds that it serves. A client that publishes a feed opts in by writing `_submissions` into it, with `url` set to `comment_endpoint`, a `comments` policy, and `republish` set to what the server does, so far `no`: the comments go into the inbox, and the owner decides what happens to them. The server enforces the rules of the feed's policy, and refuses comments for feeds whose `_submissions` names another endpoint.
+
+The server declares `/pups/private/inbox.json` in `well_known_paths`, so that the owner's readers can ask for `read:/pups/private/inbox.json`. A client learns from `mention_endpoint` that the mention link in `host-meta.json` belongs to the PUPS server, and from `comment_endpoint` where comments on the owner's feeds go. Both are optional; a server without a receiver leaves them out.
 
 ## Using PUPS for SocialSpec
 
