@@ -18,6 +18,7 @@ In short:
 - **Simple clients don't need to support archives**, but they write only feeds without them.
 - Every item gets an **index**, `_pups.index`: 0 for the first item, then counting up, never changed and never used again. Readers can number and page through the items without reading every archive.
 - Every feed is **registered in `host-meta.json`**, so apps and readers can find all of the owner's feeds.
+- A feed **accepts comments** if its feed file has RFC-4 `_submissions`, e.g. naming the PUPS server's built-in receiver. Archives never carry it.
 - A site that shows every post on a page of its own declares its **post URLs** with a template in `host-meta.json`; clients then give new items of feeds with archives that URL.
 - How a feed becomes a web page is **out of scope**.
 
@@ -299,7 +300,7 @@ The archives hold **every item of the feed, each in exactly one archive**. They 
 - **Size.** An archive holds at most **20 items**. New items always go into the newest archive; when it holds 20, the next item starts a new one. Older archives only change when an item in them is edited or deleted.
 - **Items never move.** Once an item is in an archive, it stays there. Its URL, the archive's URL plus `#<id>`, therefore never changes, e.g. `https://tim.example.com/feed/feed.000002.json#p-8f2kQ9xLm4Tz7wRb`. Clients use it wherever an item must be referenced, e.g. as the `source` of an RFC-4 webmention.
 - **Links.** `next_url` of each archive points to the next older one. The oldest archive has no `next_url`, unless the chain continues into older pages of a feed that was handed over.
-- **Feed fields.** A new archive gets a copy of the top-level fields of the feed file, with these exceptions: `feed_url` is the archive's own URL, `user_comment` says that it is an archive, `next_url` points to the next older archive, `_pups` has `updates_url` instead of `archive_url`, `items` holds the archived items, and `_podcast.liveItems` is left out.
+- **Feed fields.** A new archive gets a copy of the top-level fields of the feed file, with these exceptions: `feed_url` is the archive's own URL, `user_comment` says that it is an archive, `next_url` points to the next older archive, `_pups` has `updates_url` instead of `archive_url`, `items` holds the archived items, and `_podcast.liveItems` and `_submissions` are left out. Whether the feed accepts comments is said by the feed file alone, see [Receiving comments](#receiving-comments-rfc-4).
 - **Marker.** Like the feed file, an archive is written only if it carries `"pupsControlled": true`.
 
 The archive's `user_comment`:
@@ -423,6 +424,16 @@ The main feed, or a named feed, can be the author feed of [RFC-4](https://github
 4. To edit or delete the comment, it changes or removes the item as described in [Editing and deleting items](#editing-and-deleting-items) and resends the webmention with the same `source`.
 
 The archives are on the owner's host, so RFC-4's `requireSocialSpec` check works for them as for the feed file.
+
+## Receiving comments (RFC-4)
+
+A feed can also be the target of RFC-4 comments: readers comment on its posts, and a receiver delivers or republishes the comments. The feed announces this with RFC-4 `_submissions` in the **feed file**, with a `comments` policy and the receiver's endpoint as `url`. The receiver may be the PUPS server's own ([RFC-6 "Built-in receiver"](https://github.com/bigwide-net/RFCs/blob/main/RFC-6-Personal-Upload-Server.md#built-in-receiver), whose `comment_endpoint` is then the `url` and `republish` is `no`), or any other RFC-4 server. `_submissions` is one of the owner's fields: a client sets or removes it only when the owner asks, and asks before replacing one that names another receiver.
+
+- **Only the feed file.** Archives are created with a copy of the feed file's fields, so a copy of `_submissions` would keep saying what was true when the archive was created. Clients therefore leave `_submissions` out of new archives (see [Archives](#archives-optional)), and the feed file alone says whether the feed accepts comments, for all its items.
+- **Readers** take `_submissions` from the feed file. A reader that shows an item from an archive finds the feed file at the archive's `_pups.updates_url`. The `target` of a comment is the feed file's URL plus `#<id>`; RFC-4 also allows the archive's URL plus `#<id>`.
+- **Receivers** that get a comment whose target is an archive of a PUPS feed (it has `_pups.updates_url`) use the `_submissions` of the feed file at `updates_url`, if it is on the same host, and ignore any in the archive. Items that are no longer in the feed file are found in the archives, from `_pups.archive_url` (or `next_url`) on.
+- **Single items** are closed with RFC-4's `_commenting: { "allowComments": false }`.
+- **Discovery.** RFC-4 also announces the endpoint with an HTTP `Link` header with `rel="webmention"` where the server can send one. Feed files are static files, so their `_submissions.url` is usually the only announcement; servers that serve them with that header may add it.
 
 ## Example
 
