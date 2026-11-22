@@ -833,10 +833,10 @@ An approved app can publish anything it likes in its own directory, under the ow
 An RFC-4 client needs an **author feed** on the user's domain. With PUPS:
 
 1. The user enters their domain. The client discovers PUPS and asks for `write:/appdata/<client-host>/`. That is a one-click grant, and the token response's `me` tells the client the user's domain.
-2. The client keeps the author feed in its own directory, e.g. `/appdata/app.example/comments.json` (JSON Feed) or `comments.xml` (RSS). RFC-4 allows one feed per target site, or one per comment, which keeps each file small. Alternatively, the client asks for `write:/feed.json` (with step-up confirmation) and adds the comments to the owner's [main feed](#the-list-of-well-known-paths), where the owner's readers see them too.
-3. For each comment, the client adds the item with `inReplyTo` and, on the feed, the socialspec account `@tim.example.com`, then writes the feed with `If-Match` (or `If-None-Match: *` for a new feed).
+2. The client keeps the author feeds in its own directory, as **comment feeds**, e.g. one file per target site and hour, `/appdata/app.example/comments/<hash3>/<hash>.json`, as [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#comment-feeds-rfc-4) recommends. Comments never go into the owner's main feed or another feed for readers.
+3. For each comment, the client adds the item with `inReplyTo` to its comment feed, which carries the socialspec account `@tim.example.com`, and writes the file with `If-Match` (or `If-None-Match: *` for a new file).
 4. It sends the webmention with `source` = the feed's **public URL** + `#guid`.
-5. To edit, it changes the item and resends the webmention; to delete, it removes the item (or the feed file) and resends it.
+5. To edit, it changes the item and resends the webmention; to delete, it removes the item (and the file, once it is empty) and resends it.
 
 Points to watch:
 

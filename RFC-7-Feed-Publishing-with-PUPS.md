@@ -41,7 +41,7 @@ In short:
 - **RSS and Atom.** Producing two formats from one set of posts, and keeping them in sync, is the job of a CMS. JSON Feed is easy to produce, easy to parse, and supports everything the bigwide.net extensions need.
 - **HTML.** No client writes web pages; PUPS doesn't allow it. See [Rendering](#rendering).
 - **Real-time notifications.** PUPS servers don't support [WebSub](https://www.w3.org/TR/websub/) yet, so feeds have no `hubs`.
-- **App-private feeds.** A feed that an app keeps in its own directory, `/appdata/<client-host>/`, e.g. the author feed of RFC-4 comments, has only one writer. The app may organize it differently.
+- **App-private feeds.** A feed that an app keeps in its own directory, `/appdata/<client-host>/`, has only one writer, and the app may organize it differently. The exception is the author feeds of RFC-4 comments, which follow [Comment feeds](#comment-feeds-rfc-4).
 
 ## Roles
 
@@ -388,16 +388,28 @@ This document doesn't say how a feed becomes a web page, and the server never pr
 
 Whatever is used, it is not a client of this document: it only reads the files. Items that have a page of their own name it in `url`, if the client knows it, e.g. from the [post URL template](#post-urls).
 
-## Using a feed for Feed Submissions (RFC-4)
+## Comment feeds (RFC-4)
 
-The main feed, or a named feed, can be the author feed of [RFC-4](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) posts and comments, as RFC-6 mentions. The owner's readers then see the comment in the feed.
+Comments, and posts to discussion groups, are [RFC-4](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) submissions: the author publishes them in an author feed, and the target's server republishes them. **Clients never use the main feed or a named feed as the author feed.** Its readers follow the owner's posts, not every comment the owner writes elsewhere, and comments would push the posts out of the newest 30. Instead, a client keeps submissions in **comment feeds** in its own directory. How it names and organizes them is up to the client. This layout is recommended, with one file per target site and hour:
 
-1. The client gives the item `_source.inReplyTo` as usual, and the feed carries the owner's SocialSpec account in `_source.accounts`.
-2. It posts the item as described in [Posting](#posting).
-3. It sends the webmention with `source` = the URL of the archive it added the item to + `#<id>`, e.g. `https://tim.example.com/feed/feed.000002.json#c-Lq7Wm2xP9dRt4yZa`. The item never leaves that archive, so the `source` stays valid. In a feed without archives, `source` is the feed file's URL + `#<id>`; it is valid only as long as the item is among the newest 30.
-4. To edit or delete the comment, it changes or removes the item as described in [Editing and deleting items](#editing-and-deleting-items) and resends the webmention with the same `source`.
+```
+/appdata/<client-host>/comments/<hash3>/<hash>.json
+```
 
-The archives are on the owner's host, so RFC-4's `requireSocialSpec` check works for them as for the feed file.
+- **`<hash>`** is the first 16 characters of the lowercase hexadecimal SHA-256 of `<target host> <hour>` (with one space between them, UTF-8):
+  - `<target host>` is the host of the target feed, the part of `inReplyTo` before `#`: lowercase, in its ASCII form (as `URL.hostname` returns it), without a port.
+  - `<hour>` is the hour of the item's `date_published` in UTC, as `yyyymmddhh`.
+- **`<hash3>`** is the last three characters of `<hash>`. It spreads the files over at most 4,096 directories, since some file systems and hosts get slow with many files in one directory.
+
+  A comment on `https://rm.example.org/groups/twowaves/posts.json#a8Kd03XpQz` published at `2026-11-04T10:20:00Z` hashes `rm.example.org 2026110410` to `8ec59ab09c61ab7b`, and goes to `/appdata/app.example/comments/b7b/8ec59ab09c61ab7b.json`.
+- **Why this layout.** Each file holds the comments on one site within one hour, so it stays small: it needs no archives, read-modify-write is cheap, and the RFC-4 server fetches it quickly. The path follows from the comment itself, so every device of the owner, and every version of the app, finds the file of a comment from its target and `date_published`, without having to remember it. The hash keeps the names short and free of special characters.
+- **The file** is a JSON Feed 1.1 with a `title` (e.g. "Comments by tim.example.com"), `home_page_url` (the owner's domain, `https://<me host>/`), `feed_url` (its own public URL) and the owner's socialspec account in `_source.accounts` (`@<me host>`), so that targets with RFC-4's `requireSocialSpec` accept it. It has no `_pups` and is not registered in `host-meta.json`: it is not a feed for readers.
+- **Posting.** The client creates the item with a new `id` (16 random URL-safe characters), `_source.inReplyTo` set to the target, `date_published` set to now, and content within the target's policy. It finds the comment feed for it (with the recommended layout, from the target and `date_published`), reads the file with a [fresh read](https://github.com/bigwide-net/RFCs/blob/main/RFC-6-Personal-Upload-Server.md#fresh-reads), adds the item at the top of `items`, and writes it with `If-Match`; if the file doesn't exist, it creates it with `If-None-Match: *`. On `412`, it starts again.
+- **Submitting.** `source` is the file's public URL plus `#<id>`, e.g. `https://bob.example.net/appdata/app.example/comments/b7b/8ec59ab09c61ab7b.json#c-Lq7Wm2xP9dRt4yZa`. The client sends the webmention once the item is visible at that URL, so that the server doesn't fetch an older copy from a cache. It sends no [RFC-11](https://github.com/bigwide-net/RFCs/blob/main/RFC-11-Mentions.md) mentions for the item; the RFC-4 server does that when it republishes it.
+- **Editing and deleting.** The client changes the item in its file, keeping `id` and `date_published` and setting `date_modified`, or removes it, and resends the webmention with the same `source`. It deletes a file whose last item it removed; RFC-4 servers treat the `404` as a delete.
+- **Keeping.** The files stay as long as the author may want to edit or delete the comments (RFC-4 "Author feeds"). A client never moves an item to another file, since its `source` would change.
+
+`public_base` must be on the owner's host for `requireSocialSpec` to work, as for every author feed (see RFC-6, [Using PUPS for Feed Submissions](https://github.com/bigwide-net/RFCs/blob/main/RFC-6-Personal-Upload-Server.md#using-pups-for-feed-submissions-rfc-4)).
 
 ## Receiving comments (RFC-4)
 

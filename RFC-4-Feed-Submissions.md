@@ -215,7 +215,7 @@ source=https%3A%2F%2Fbob.example.net%2Ffeed.xml%23c-17&target=https%3A%2F%2Frm.e
 
 Author feeds are **RSS 2.0 or JSON Feed**. Atom is not supported: two formats are enough. RSS because it is by far the most widespread, JSON Feed because it is the easiest to produce and to parse.
 
-When the target requires a socialspec account, an author feed only needs to be on the author's domain (see [Authorship](#authorship)). It can then be a feed that exists just for commenting, one per site or one per comment, and doesn't need to be listed or linked anywhere. The server reads it when it receives the webmention, and again when the author re-sends the webmention to edit or delete the item, so it should stay available as long as the author may want to do that.
+When the target requires a socialspec account, an author feed only needs to be on the author's domain (see [Authorship](#authorship)). It can then be a feed that exists just for commenting, one per site or one per comment, and doesn't need to be listed or linked anywhere. Clients should use such feeds for comments rather than the author's main feed, whose readers follow the author's posts, not every comment they write elsewhere. [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#comment-feeds-rfc-4) recommends a layout for clients that write through a Personal Upload Server: one feed per target site and hour. The server reads it when it receives the webmention, and again when the author re-sends the webmention to edit or delete the item, so it should stay available as long as the author may want to do that.
 
 ### Source
 
@@ -380,12 +380,13 @@ Alice's blog feed `https://alice.example.com/feed.json` uses a comment server at
 }
 ```
 
-Bob publishes his comment in `https://bob.example.net/feed.json`, with `inReplyTo` set to the post:
+Bob's app publishes his comment in one of his comment feeds, `https://bob.example.net/appdata/app.example/comments/968/b2f08b37d2afa968.json` (see [Author feeds](#author-feeds)), with `inReplyTo` set to the post:
 
 ```json
 {
   "id": "c-17",
   "authors": [{ "name": "Bob" }],
+  "date_published": "2026-11-04T10:20:00Z",
   "content_html": "<p>Agreed, but discovery is hard.</p>",
   "_source": {
     "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
@@ -397,7 +398,7 @@ Bob publishes his comment in `https://bob.example.net/feed.json`, with `inReplyT
 and sends the webmention:
 
 ```
-source=https://bob.example.net/feed.json#c-17
+source=https://bob.example.net/appdata/app.example/comments/968/b2f08b37d2afa968.json#c-17
 target=https://alice.example.com/feed.json#post-42
 ```
 
@@ -462,7 +463,7 @@ The group feed `https://rm.example.org/groups/twowaves/posts.json`, as rssmentio
 }
 ```
 
-Bob's comment in his author feed `https://bob.example.net/feed.json`:
+Bob's comment in his comment feed `https://bob.example.net/appdata/app.example/comments/b7b/8ec59ab09c61ab7b.json`:
 
 ```json
 {
@@ -481,7 +482,7 @@ Bob's comment in his author feed `https://bob.example.net/feed.json`:
 The webmention, and the comment as it appears afterwards in `…/comments/a8Kd03XpQz/comments.json`:
 
 ```
-source=https://bob.example.net/feed.json#c-17
+source=https://bob.example.net/appdata/app.example/comments/b7b/8ec59ab09c61ab7b.json#c-17
 target=https://rm.example.org/groups/twowaves/posts.json#a8Kd03XpQz
 ```
 

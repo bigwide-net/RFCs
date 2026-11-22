@@ -340,7 +340,7 @@ This continues the discussion group example of RFC-4. Alice's post in the group 
 }
 ```
 
-Bob submits a comment from his author feed `https://bob.example.net/feed.json`, with `inReplyTo` set to Alice's post. His client sends the RFC-4 webmention to the group, and no mention. The group's server, `rm.example.org`, accepts the comment and republishes it in the post's comment feed, `https://rm.example.org/groups/twowaves/comments/a8Kd03XpQz/comments.json`:
+Bob submits a comment from his comment feed `https://bob.example.net/appdata/app.example/comments/b7b/8ec59ab09c61ab7b.json`, with `inReplyTo` set to Alice's post. His client sends the RFC-4 webmention to the group, and no mention. The group's server, `rm.example.org`, accepts the comment and republishes it in the post's comment feed, `https://rm.example.org/groups/twowaves/comments/a8Kd03XpQz/comments.json`:
 
 ```json
 {
