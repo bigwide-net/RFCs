@@ -98,7 +98,8 @@ A handle is `@` followed by a host name, e.g. `@tim.example.com`. It names the w
 
 - **Where.** In the post's title and its text: the visible text of its HTML content, or its plain-text content if it has no HTML. Text inside `code` and `pre` doesn't count, and neither do attribute values, such as `href`. Link text counts, so `<a href="https://tim.example.com/">@tim.example.com</a>` is a handle.
 - **Before the `@`**: the start of the text, whitespace, or a punctuation character other than `.`, `_`, `-`, `+`, `/` and `@`. That excludes e-mail addresses such as `tim@tim.example.com`.
-- **After the host**: the end of the text, whitespace, or a punctuation character other than `-`, `_`, `/` and `@`. A trailing `.` ends the handle when it isn't followed by a letter or digit, so *Thanks, @tim.example.com.* names `tim.example.com`. That excludes fediverse addresses such as `@tim@social.example`, and paths.
+- **After the host**: the end of the text, whitespace, or a punctuation character other than `-`, `_`, `/` and `@`. A trailing `.` ends the handle when it isn't followed by a letter or digit, so *I did this thanks to @tim.example.com.* names `tim.example.com`. That excludes fediverse addresses such as `@tim@social.example`, and paths.
+- **Lists.** Handles separated by `,` or `;`, with or without spaces, are separate handles: `@tim.example.com,@alice.example.com` names both. So does a `/` directly between two handles: `@tim.example.com/@alice.example.com`. Everywhere else, a `/` after a handle makes it a path, and a `/` before an `@` an address in a URL, such as `https://social.example/@tim.example.com`.
 - **Comparing.** Hosts are compared in lowercase ASCII form, after converting Unicode names with IDNA.
 
 **Writing handles.** Where links are allowed, publishers should link each handle to the domain's root: `<a href="https://tim.example.com/">@tim.example.com</a>`. Readers can then open the profile, and generic Webmention receivers, which look for a link to the target, accept the mention too. Where links are not allowed, such as a comment under an RFC-4 policy without `allowLinks`, the plain handle is enough.
@@ -166,7 +167,7 @@ The sender posts a webmention to the endpoint, as the [Webmention spec](https://
 
 `source` is the post that mentions the account:
 
-- **A feed item**: the URL of the feed it is published in, plus `#` and its id (RSS `<guid>`, JSON `id`), as in RFC-4. Feeds that move older items into archives should use a URL that the item never leaves, like the archives of [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md), so that the receiver still finds it when it re-checks the mention later.
+- **A feed item**: the URL of the feed it is published in, plus `#` and its id (RSS `<guid>`, JSON `id`), as in RFC-4. Feeds that move older items into archives should use a URL that the item never leaves, like the archives of JSON Feed Archives ([RFC-13](https://github.com/bigwide-net/RFCs/blob/main/RFC-13-JSON-Feed-Archives.md)), so that the receiver still finds it when it re-checks the mention later.
 - **An HTML page**: its URL. A sender that publishes both a feed and pages should send the feed item, which the receiver can read without guessing.
 
 ### Target
@@ -260,6 +261,8 @@ A sender may run in the browser, such as an app that publishes the owner's feed 
 
 RFC-6 already serves `host-meta.json` with CORS. Other domains may not; a browser-based sender can't discover their endpoint and should leave mentions of them to a server, or skip them.
 
+A browser-based sender may also send to an endpoint that doesn't answer with CORS headers. The form-encoded `POST` is a simple request, so a request in `no-cors` mode reaches the receiver, but the sender can't read the answer. It then treats the result as unknown and doesn't retry.
+
 ## Security considerations
 
 **Anyone can send a mention.** The receiver trusts nothing in the request. It fetches the source and checks it, so a mention reaches the inbox only if a public post really names or answers the owner. A sender can't forge the author: the inbox shows what the source says, attributed as described in [Delivering](#delivering).
@@ -287,7 +290,7 @@ RFC-6 already serves `host-meta.json` with CORS. Other domains may not; a browse
 
 ## Example: mentioned in a blog post
 
-Alice publishes a post in her feed, through an app that writes it to `https://alice.example.com/feed/feed.000004.json` as an RFC-7 archive:
+Alice publishes a post in her feed, through an app that writes it to `https://alice.example.com/feed/feed.000004.json` as an RFC-13 archive:
 
 ```json
 {

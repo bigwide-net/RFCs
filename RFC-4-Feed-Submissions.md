@@ -223,7 +223,7 @@ When the target requires a socialspec account, an author feed only needs to be o
 
 ### Archived items
 
-Feeds that keep only their newest items often move older ones into archive pages. The item that `source` names may therefore no longer be in the feed at that URL, but in a page linked from it. (Authors can avoid this by using the URL of a page the item never leaves as `source`, as [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md) does with its archives.) `source` doesn't change when that happens: it always names the feed the item was published in.
+Feeds that keep only their newest items often move older ones into archive pages. The item that `source` names may therefore no longer be in the feed at that URL, but in a page linked from it. (Authors can avoid this by using the URL of a page the item never leaves as `source`, such as the archives of JSON Feed Archives, [RFC-13](https://github.com/bigwide-net/RFCs/blob/main/RFC-13-JSON-Feed-Archives.md).) `source` doesn't change when that happens: it always names the feed the item was published in.
 
 - If the item is not in the fetched feed, the server follows the feed's pagination and looks for the guid there: `next_url` in JSON Feed, `<atom:link rel="next">` ([RFC 5005](https://www.rfc-editor.org/rfc/rfc5005)) in RSS. It goes on from page to page until it finds the item or reaches the end.
 - It follows only pages on the same host as `source`, never one it has seen already, and fetches each with the same limits as the author feed.

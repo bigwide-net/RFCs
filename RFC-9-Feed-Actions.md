@@ -131,8 +131,11 @@ A select needs a `name`, an `action`, or both. A reader ignores a select with ne
 | --- | --- | --- |
 | `text` | string | **Required.** The text to show, at most 1000 characters. |
 | `header` | boolean | `true` shows the text as a heading, typically bold. Defaults to `false`. |
+| `url` | string | An absolute `http` or `https` URL. The reader shows the text as a link to it. |
 
 A display shows information next to the other controls: an explanation ("Rejected posts are deleted after 30 days"), a heading for a group, or the current state of the item ("Accepted by Tim, 10:42"). It has a `helpText` like every other control, but no `label`, `name` or `action`.
+
+With a `url`, the display is a link, e.g. to the post an item is about: "Mention from @bob.example at bob.example/feed.json#p-81". Opening it sends nothing to the feed's server; the reader opens it as it opens links in content, by the rules of [RFC-2](https://github.com/bigwide-net/RFCs/blob/main/RFC-2-HTML-Subset-for-Feed-Content.md#schemes), and shows the text without a link if the URL isn't allowed there. A reader that knows the URL as a feed item (a feed URL + `#id`) may show that item itself. Readers that don't know `url` show the text, which therefore should make sense without the link.
 
 ### Values
 
