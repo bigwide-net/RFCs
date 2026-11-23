@@ -19,7 +19,7 @@ The protocol is built from existing specs, with as little new as possible:
 - **Discovery**: one link in `/.well-known/host-meta.json` ([RFC 6415](https://www.rfc-editor.org/rfc/rfc6415), JSON form) points to a JSON configuration document.
 - **Authorization**: [OAuth 2.1](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) authorization code flow with PKCE (S256), public clients only.
 - **Client identity**: [OAuth Client ID Metadata Documents](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/) (CIMD): the `client_id` is a URL on the app's own domain, so apps need no registration.
-- **Uploads**: plain HTTP `PUT` and `DELETE` with bearer tokens ([RFC 6750](https://www.rfc-editor.org/rfc/rfc6750)) and ETag preconditions ([RFC 9110](https://www.rfc-editor.org/rfc/rfc9110#name-conditional-requests)), plus a `POST` fallback for hosts that block those methods.
+- **Uploads**: plain HTTP `PUT` and `DELETE` with bearer tokens ([RFC 6750](https://www.rfc-editor.org/rfc/rfc6750)) and ETag preconditions ([RFC 9110](https://www.rfc-editor.org/rfc/rfc9110#name-conditional-requests)), plus a `POST` fallback for hosts that block those methods. The owner's feeds are kept by the server, which writes their archives and takes single items by `POST` ([RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md)).
 - **Sign-in with your domain**: because only the domain's owner can approve, every authorization also proves control of the domain. The token response names the owner's domain in `me`, as [IndieAuth](https://indieauth.spec.indieweb.org/) does.
 
 The new parts are the configuration document, the scope syntax, the rules for paths and file types, and an endpoint that lets apps register links in `host-meta.json`. See [What is new and what is reused](#what-is-new-and-what-is-reused).
@@ -80,6 +80,7 @@ PUPS invents as little as possible. Most of it is existing standards, some of th
 - **Fresh reads**: a bearer token on a `GET` bypasses caches, but grants nothing. See [Fresh reads](#fresh-reads).
 - **Private areas**: `/appdata/<client-host>/private/` and `/pups/private/`, read with a token whose scope covers them, and the `read:` scope for private paths. See [Private areas](#private-areas).
 - **The POST fallback** for hosts that block `PUT` and `DELETE`. See [POST fallback](#post-fallback).
+- **Kept feeds**: the server keeps the archives of the owner's feeds, and takes their items by `POST`. See [Kept feeds](#kept-feeds) and RFC-7.
 - **The host-meta endpoint**, through which apps add links to and set properties in `host-meta.json` without being able to touch the owner's entries. See [Editing host-meta.json](#editing-host-metajson).
 - **Requirements for the owner's side**: what the consent screen shows, step-up confirmation for well-known paths, and the two deployment modes. See [Consent](#consent), [Owner authentication](#owner-authentication) and [Deployment modes](#deployment-modes).
 
@@ -173,6 +174,7 @@ The `href` points to the configuration document. Its path is chosen by the serve
 | `well_known_paths` | The files and directories outside `/appdata/` that apps may ask for. See [Well-known paths](#well-known-paths). Missing: none. |
 | `host_meta_endpoint` | Where apps add links to and set properties in `host-meta.json`. Missing: the server cannot write `host-meta.json`. |
 | `post_endpoint` | Present only if the server cannot accept `PUT` and `DELETE`. Clients must then send all writes there. See [POST fallback](#post-fallback). |
+| `kept_feeds` | `true` if the server keeps the owner's feeds as RFC-7 describes. See [Kept feeds](#kept-feeds). Missing: it doesn't. |
 | `mention_endpoint` | Present if the server has a built-in receiver for [mentions (RFC-11)](https://github.com/bigwide-net/RFCs/blob/main/RFC-11-Mentions.md) that writes the owner's inbox. See [Built-in receiver](#built-in-receiver). |
 | `comment_endpoint` | Present if the server accepts [comments (RFC-4)](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) on posts of the owner's feeds and writes them into the owner's inbox. See [Built-in receiver](#built-in-receiver). |
 | `max_upload_bytes` | **Required.** The largest file the server accepts, in bytes. |
@@ -380,7 +382,7 @@ The top-level properties of `host-meta.json` that describe the site, for profile
 
 ### Post URLs
 
-The site property `https://bigwide.net/ns/post-url-template` says where the site's renderer shows a single post of a feed ([RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md)). Apps that write the feeds use it to give new posts their `url` (RFC-7, [Post URLs](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#post-urls)), so that readers link to the post's page on the owner's site.
+The site property `https://bigwide.net/ns/post-url-template` says where the site's renderer shows a single post of a feed ([RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md)). The server uses it to give new posts of kept feeds their `url` (RFC-7, [Post URLs](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#post-urls)), so that readers link to the post's page on the owner's site.
 
 ```json
 "https://bigwide.net/ns/post-url-template": "https://tim.example.com/p/{feed}/post/{index}"
@@ -511,6 +513,7 @@ All writes carry `Authorization: Bearer <access_token>`, and reads may carry it 
 | `PUT <storage_base><path>` | `Content-Type`, `If-Match: "<etag>"` | `200 OK` + `ETag` | Replace only if unchanged; `412` otherwise. |
 | `PUT <storage_base><path>` | `Content-Type` only | `200`/`201` + `ETag` | Unconditional write. Allowed, discouraged. |
 | `DELETE <storage_base><path>` | `If-Match` optional | `204 No Content` | Delete; `404` if missing, `412` if the ETag doesn't match. |
+| `POST <storage_base><feed file>` | `Content-Type: application/json` | `201 Created` or `200 OK` + JSON | Add, change or delete an item of a kept feed. See [Kept feeds](#kept-feeds). |
 | `GET`/`HEAD <storage_base><path>` | none | `200` + `ETag` | Public read, no token needed. May come from a cache. |
 | `GET`/`HEAD <storage_base><path>` | `Authorization` | `200` + `ETag` | Fresh read: the latest version, never from a cache. See [Fresh reads](#fresh-reads). |
 | `GET`/`HEAD <storage_base><private path>` | `Authorization` with a covering scope | `200` + `ETag` | Private read; `401` without a valid token, `403` without a covering scope. See [Private areas](#private-areas). |
@@ -540,6 +543,17 @@ ETags make read-modify-write safe when several apps, or the owner, change the sa
 3. On `412`, start again at 1.
 
 Apps creating a file use `If-None-Match: *`. Use only ETags from `storage_base` (from a write response or a `GET`/`HEAD` there). ETags from `public_base` may come from a CDN and need not match.
+
+### Kept feeds
+
+A server with `"kept_feeds": true` keeps the owner's feeds as [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md) describes. It applies to feed files, the declared files with the feed relation (`/feed.json`) and the files `<name>.json` directly in a declared directory with it (`/feed/<name>.json`), that carry `"_pups": { "pupsControlled": true }`:
+
+- **`PUT` of such a feed file** is checked against `If-Match` and `If-None-Match` as always, but not stored as it is: the server applies it, adding, changing and deleting items in the feed's archives ([RFC-13](https://github.com/bigwide-net/RFCs/blob/main/RFC-13-JSON-Feed-Archives.md)), and writes the feed file itself. The response carries the stored feed file. See RFC-7, [Writing the feed file](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#writing-the-feed-file).
+- **`POST` of an item to the feed file** adds, changes or deletes a single item. See RFC-7, [Posting items](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#posting-items). `POST` to any other file is answered with `405` or `404`.
+- **Archives** of a kept feed, `feed.<NNNNNN>.json` in its feed directory, and its comment feeds in `comments/` there, are written only by the server. `PUT` and `DELETE` of them are refused with `403`.
+- **`_source.comments`** of the posts is set by the server while the feed's comments go to its `comment_endpoint`. See RFC-7, [Publishing comments](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#publishing-comments).
+
+The scope of the feed file covers all of this, including the archives the server writes. Feed files without the marker, and their directories, are ordinary files.
 
 ### Paths
 
@@ -578,8 +592,8 @@ POST <post_endpoint>?method=PUT&path=%2Ffeed%2Fimages%2F2026%2Fsunset.jpg
 POST <post_endpoint>?method=DELETE&path=%2Ffeed%2Fimages%2F2026%2Fold.jpg
 ```
 
-- `method` is `PUT` or `DELETE`; `path` is the path relative to `storage_base`, percent-encoded.
-- The body is the raw file, not multipart. `Authorization`, `Content-Type`, `If-Match` and `If-None-Match` work exactly as above, and status codes, errors and ETags are the same.
+- `method` is `PUT`, `DELETE`, or `POST` for an item of a kept feed; `path` is the path relative to `storage_base`, percent-encoded.
+- The body is the raw file, or the item, not multipart. `Authorization`, `Content-Type`, `If-Match` and `If-None-Match` work exactly as above, and status codes, errors and ETags are the same.
 
 ## File types
 
@@ -850,7 +864,7 @@ Points to watch:
 A PUPS server may receive what other sites send to its owner, and write it into the owner's [inbox (RFC-12)](https://github.com/bigwide-net/RFCs/blob/main/RFC-12-Inbox-Feeds.md), `/pups/private/inbox.json`, with `pups` as its `writer`. It needs no grant, and nothing to set up. It has two parts, with two endpoints, because they mean different things: a mention asks for attention, a comment to be published.
 
 - **Mentions.** The server receives [RFC-11](https://github.com/bigwide-net/RFCs/blob/main/RFC-11-Mentions.md) mentions at `mention_endpoint`, and links it from `host-meta.json` with the relation `https://bigwide.net/ns/mention`, as RFC-11 allows for a receiver that the PUPS server runs itself. It adds the link once; if the owner removes it, it stays removed.
-- **Comments.** The server accepts [RFC-4](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) comments at `comment_endpoint`, for posts in the owner's feeds that it serves. A client that publishes a feed opts in by writing `_submissions` into its feed file, with `url` set to `comment_endpoint`, a `comments` policy, and `republish` set to what the server does, so far `no`: the comments go into the inbox, and the owner decides what happens to them. The server enforces the rules of the feed's policy, and refuses comments for feeds whose `_submissions` names another endpoint. For a comment on an item in an archive, it uses the `_submissions` of the feed file at the archive's `_archive.updates_url` ([RFC-13](https://github.com/bigwide-net/RFCs/blob/main/RFC-13-JSON-Feed-Archives.md)), as [RFC-7 "Receiving comments"](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#receiving-comments-rfc-4) describes.
+- **Comments.** The server accepts [RFC-4](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) comments at `comment_endpoint`, for posts in the owner's feeds that it serves. A client that publishes a feed opts in by writing `_submissions` into its feed file, with `url` set to `comment_endpoint`, a `comments` policy, and `republish` set to `full`, `summary` or `no`. Either way the comments go into the inbox. With `full` or `summary`, in a kept feed, each comment has an *Approve* action ([RFC-9](https://github.com/bigwide-net/RFCs/blob/main/RFC-9-Feed-Actions.md)), and the server publishes the comments the owner approves in the post's comment feed, as [RFC-7 "Publishing comments"](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#publishing-comments) describes, in full or as an abstract; with `no`, the owner only reads them. The server enforces the rules of the feed's policy, and refuses comments for feeds whose `_submissions` names another endpoint. For a comment on an item in an archive, it uses the `_submissions` of the feed file at the archive's `_archive.updates_url` ([RFC-13](https://github.com/bigwide-net/RFCs/blob/main/RFC-13-JSON-Feed-Archives.md)), as [RFC-7 "Receiving comments"](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#receiving-comments-rfc-4) describes.
 
 The server declares `/pups/private/inbox.json` in `well_known_paths`, so that the owner's readers can ask for `read:/pups/private/inbox.json`. A client learns from `mention_endpoint` that the mention link in `host-meta.json` belongs to the PUPS server, and from `comment_endpoint` where comments on the owner's feeds go. Both are optional; a server without a receiver leaves them out.
 

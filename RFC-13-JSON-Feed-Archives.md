@@ -20,7 +20,7 @@ In short:
 
 It has three audiences:
 
-- **Publishers**: CMSs, static site generators and apps that write feeds, e.g. through a Personal Upload Server ([RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md)).
+- **Publishers**: CMSs, static site generators, and servers that keep feeds for apps, such as a Personal Upload Server ([RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md)).
 - **Readers**: feed readers that show a feed's history, open a post from a link, or number posts.
 - **Other specs** that reference feed items by URL: [RFC-4](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) comments, [RFC-11](https://github.com/bigwide-net/RFCs/blob/main/RFC-11-Mentions.md) mentions, post pages of a site.
 
@@ -40,7 +40,7 @@ It has three audiences:
 **Non-goals**
 
 - **RSS and Atom.** They have [RFC 5005](https://www.rfc-editor.org/rfc/rfc5005) (Feed Paging and Archiving) already, see [Relation to RFC 5005](#relation-to-rfc-5005). This RFC can be extended to RSS if there is demand.
-- **How archives are written** in a particular system. This document describes the files and the rules that keep them consistent; [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md) describes how apps write them through PUPS.
+- **How archives are written** in a particular system. This document describes the files and the rules that keep them consistent; [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md) describes how a PUPS server keeps them for the apps that post to a feed.
 - **Searching.** Archives are pages in a chain, not an index of words or dates.
 - **Deleting history.** A publisher can delete items, but not hide that an archive existed: archives are never removed from the chain.
 
@@ -187,7 +187,7 @@ Indexes let readers work with the archives without reading all of them:
 
 ## Writing
 
-This section describes the files after each change. A system with one writer can apply it directly. Where several writers share a feed, they need conditional writes and a common procedure; [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md) defines one for PUPS with ETags.
+This section describes the files after each change. A system with one writer can apply it directly, as a PUPS server does for the apps that post to a feed ([RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md)). Where several writers share the files themselves, they need conditional writes, such as ETags, and a common procedure.
 
 **The archive comes first.** The archives are the record of the feed; the feed file is a copy of its newest items. Every change is written to the archive before the feed file. An interrupted writer then leaves an item that is archived but not yet in the feed file, which the next write repairs, but never an item in the feed file that no archive holds.
 
@@ -241,13 +241,6 @@ A feed with archives whose newest archive has no `next_index` hasn't been number
 - **Targets.** A comment or reply may name the answered item by its address in an archive or by the feed file's URL + `#id`. Receivers accept both.
 - **`_submissions`** is in the feed file only, and applies to all items of the feed and its archives. A receiver or reader that has an archive finds it at `updates_url`.
 - **Post pages.** A site that shows every post on a page of its own can name the pages by index, e.g. `https://tim.example.com/p/feed/post/47` ([RFC-6, Post URLs](https://github.com/bigwide-net/RFCs/blob/main/RFC-6-Personal-Upload-Server.md#post-urls)), and find the item as described above.
-
-## Earlier drafts
-
-Earlier versions of [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md) defined these fields in its `_pups` object: `_pups.archive_url`, `_pups.updates_url`, `_pups.next_index` and `_pups.index`, with the same meaning and without `number`, `archive_template` and `archive_size` (archives were always `feed.<NNNNNN>.json` with 20 items).
-
-- **Readers** that find no `_archive` in a file, or no `index` in an item's `_archive`, should accept those fields from `_pups`.
-- **Writers** that write such a file move the fields to `_archive`, add `number`, and remove them from `_pups`. They write the feed file's `_archive` last, after the archives, as everywhere.
 
 ## Security considerations
 

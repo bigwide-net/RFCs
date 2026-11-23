@@ -281,6 +281,7 @@ Content-Type: application/json
 | `status` | Other fields | Meaning |
 | --- | --- | --- |
 | `waiting` | | Not processed yet. Poll again after a few seconds. |
+| `pending` | | Accepted by the checks, and waiting for a moderator. Stop polling; the comment appears in the comment feed once it is approved. |
 | `success` | `pubDate`, `pubUrl` | Accepted. `pubUrl` is the containing feed + `#guid`; it is missing if `republish` is `no`. |
 | `deleted` | | The resubmission deleted the item. |
 | `failure` | `code`, `text` | Rejected. `text` is a human-readable reason to show the author. |

@@ -30,7 +30,7 @@ All of this while:
 | [RFC-4: Feed Submissions](RFC-4-Feed-Submissions.md) | Comments and group discussions between feeds, with Webmention: the author publishes on their own domain, and the target republishes. |
 | [RFC-5: Comment HTML and Markdown](RFC-5-Comment-HTML.md) | The formatting a comment or group post may use when one feed submits it to another. |
 | [RFC-6: Personal Upload Server (PUPS)](RFC-6-Personal-Upload-Server.md) | Lets apps write files to the user's own domain with standard OAuth, and sign the user in with their domain. |
-| [RFC-7: PUPS Feeds](RFC-7-Feed-Publishing-with-PUPS.md) | Conventions for apps that publish a blog feed on the user's domain through PUPS, with RFC-13 archives. |
+| [RFC-7: PUPS Feeds](RFC-7-Feed-Publishing-with-PUPS.md) | How a PUPS server keeps a blog feed on the user's domain, with RFC-13 archives, and how apps post to it. |
 | [RFC-8: Fallback HTML](RFC-8-Fallback-HTML.md) | HTML in a post that only readers without a particular extension show, so feeds can adopt new extensions without losing older readers. |
 | [RFC-9: Feed Actions](RFC-9-Feed-Actions.md) | Buttons, choices and inputs on JSON Feed items and feeds, such as moderating submissions or voting in a poll, sent to the publisher's API with a plain `POST`. |
 | [RFC-10: Identity Tokens](RFC-10-Identity-Tokens.md) | Lets an app prove to any server that it acts for the owner of a domain, with a short-lived token from their PUPS server, e.g. to vote in a poll as `@tim.example.com`. |
