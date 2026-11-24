@@ -169,7 +169,7 @@ The text is for humans. Apps recognize a kept feed by `_pups`, never by this tex
 
 ### Icons
 
-`icon` (512 × 512 pixels) and `favicon` (64 × 64) are optional and chosen by the owner. They are stored in `/feed/images/icons/` for the main feed, e.g. `https://tim.example.com/feed/images/icons/icon-k3x9.png`, and in `/feed/<name>/images/icons/` for a named feed, e.g. `https://tim.example.com/feed/photos/images/icons/icon-m2q7.png`.
+`icon` (512 × 512 pixels) and `favicon` (192 × 192, large enough for touch UIs) are optional and chosen by the owner. They are stored in `/feed/images/icons/` for the main feed, e.g. `https://tim.example.com/feed/images/icons/icon-k3x9.png`, and in `/feed/<name>/images/icons/` for a named feed, e.g. `https://tim.example.com/feed/photos/images/icons/icon-m2q7.png`.
 
 - The app lets the owner pick or upload the image. It may offer to crop or scale it, but doesn't create an icon on its own, e.g. from its own logo.
 - Every new image gets a **new file name**, so that readers and caches that keep the old URL never show a stale image under a new name. After the feed has been written with the new URL, the app deletes the old file.
@@ -397,28 +397,29 @@ A feed can also be the target of RFC-4 comments: readers comment on its posts, a
 
 ## Publishing comments
 
-When a kept feed's `_submissions` names the PUPS server's `comment_endpoint` with `"republish": "full"` or `"summary"`, the server publishes the comments that the owner approves, in one **comment feed** per post. With `"no"`, or a value it doesn't know, the comments only go into the inbox. Comments on posts are all it accepts so far: it announces `"maxDepth": 1` and refuses replies to comments with `max-depth`. The layout leaves room for deeper threads later.
+When a kept feed's `_submissions` names the PUPS server's `comment_endpoint` with `"republish": "full"` or `"summary"`, the server publishes the comments that the owner approves, in one **comment feed** per post, and the replies to them in one comment feed per comment. With `"no"`, or a value it doesn't know, the comments only go into the inbox. Replies are accepted as deep as the policy's `maxDepth` (RFC-4, default 5) allows, but at most 10 levels; deeper ones are refused with `max-depth`.
 
-**Moderation.** A comment that passes the policy's checks goes into the owner's inbox ([RFC-12](https://github.com/bigwide-net/RFCs/blob/main/RFC-12-Inbox-Feeds.md)), with an *Approve* button ([RFC-9](https://github.com/bigwide-net/RFCs/blob/main/RFC-9-Feed-Actions.md), `"style": "major"`, the first action) next to *Dismiss*. Its status page says `pending` (RFC-4 "Response and status") until the owner decides. *Approve* publishes the comment and removes it from the inbox; its status becomes `success`, with the comment's address as `pubUrl`. *Dismiss* removes it; its status becomes `failure` with `moderation-rejected`.
+**Moderation.** A comment that passes the policy's checks goes into the owner's inbox ([RFC-12](https://github.com/bigwide-net/RFCs/blob/main/RFC-12-Inbox-Feeds.md)), with the link to the comment first, then a *Publish Comment* button ([RFC-9](https://github.com/bigwide-net/RFCs/blob/main/RFC-9-Feed-Actions.md), `"style": "major"`) next to *Dismiss*. Its status page says `pending` (RFC-4 "Response and status") until the owner decides. *Publish Comment* publishes the comment and removes it from the inbox; its status becomes `success`, with the comment's address as `pubUrl`. *Dismiss* removes it; its status becomes `failure` with `moderation-rejected`.
 
-**Comment feeds.** The comments on a post are in `<feed directory>/comments/<index>.json`, named after the post's `_archive.index`: `/feed/comments/47.json` for the post with index 47 of the main feed, `/feed/photos/comments/47.json` for the feed `photos`. Replies to a comment will go into `<feed directory>/comments/<index>/<comment id>.json`. A comment feed is a JSON Feed 1.1 document, newest first, written only by the server:
+**Comment feeds.** The comments on a post are in `<feed directory>/comments/<index>.json`, named after the post's `_archive.index`: `/feed/comments/47.json` for the post with index 47 of the main feed, `/feed/photos/comments/47.json` for the feed `photos`. The replies to a comment are in `<feed directory>/comments/<index>/<comment id>.json`, whatever the comment's depth: all comment feeds of a post's thread share the directory of the post's index, and the comment ids, which the server assigns, are unique. A comment feed is a JSON Feed 1.1 document, newest first, written only by the server:
 
-- `title` is "Comments on “<post title>”", `home_page_url` the post's `url` or the domain's root, `feed_url` its own URL.
-- Each item is the comment as RFC-4 "What is republished" describes: its `id` is the guid from the submission, then `url` (the comment's link), `title`, `content_html` (cleaned to a safe subset of HTML), `authors`, `date_published`, and `_source` with `inReplyTo` (the post) and the verified `accounts.socialspec`.
+- `title` is "Comments on “<post title>”", or for replies "Replies to a comment by <author> on “<post title>”"; `home_page_url` is the `url` of the comment (or post) it answers, or the domain's root; `feed_url` is its own URL.
+- `_pups.inReplyTo` is the address of the post or comment whose replies it holds. It ties the thread together: from any comment feed, the server finds the comment feeds above it, up to the post's.
+- Each item is the comment as RFC-4 "What is republished" describes: its `id` is the guid from the submission, then `url` (the comment's link), `title`, `content_html` (cleaned to a safe subset of HTML), `authors`, `date_published`, and `_source` with `inReplyTo` (the post or comment it answers), the verified `accounts.socialspec`, and `comments` (see Counts).
 - **`summary`.** Instead of `content_html`, the item has an abstract as `content_text`: the comment's plain text, without any markup, cut off after 150 characters (the last one an ellipsis `…`). Its `url` links to the full text, so the server refuses comments without one (`link-missing`).
-- **Which mode.** A comment is published as its author agreed when submitting it, and never more fully: if the feed changed to `summary` since, it is published as an abstract; if the feed no longer publishes comments, *Approve* fails.
-- An item's address is the comment feed's URL plus `#<id>`.
+- **Which mode.** A comment is published as its author agreed when submitting it, and never more fully: if the feed changed to `summary` since, it is published as an abstract; if the feed no longer publishes comments, *Publish Comment* fails.
+- An item's address is the comment feed's URL plus `#<id>`. A reply to a comment uses that address as its `target` and `inReplyTo`, e.g. `https://alice.example/feed/comments/47.json#s-m8NdnkLz7ri4Aws9`; the server applies the policy of the post's feed, and refuses replies to comments it hasn't published (`target-gone`).
 
-**Counts.** While the feed's `_submissions` names the server's `comment_endpoint`, the server keeps every post's `_source.comments` (RFC-1):
+**Counts.** While the feed's `_submissions` names the server's `comment_endpoint`, the server keeps every post's `_source.comments` (RFC-1), and that of every published comment:
 
-- A post without comments that accepts them has `{ "count": 0, "total": 0 }`, without `feedUrl`, as there is no comment feed yet.
-- A post with comments has `{ "feedUrl": "<its comment feed>", "count": <direct comments>, "total": <with all replies> }`. While comments are flat, `total` equals `count`.
+- A post without comments that accepts them has `{ "count": 0, "total": 0 }`, without `feedUrl`, as there is no comment feed yet. So does a comment without replies that can get them, because it is less deep than `maxDepth`. A comment at the deepest level has none.
+- A post or comment with replies has `{ "feedUrl": "<its comment feed>", "count": <direct replies>, "total": <with all replies to them> }`. When a comment is published or removed, the server updates the counts of every comment above it and of the post.
 - A post closed with `_commenting` that has no comments gets none. A post that has comments keeps its `feedUrl` and counts when the feed is closed, so readers still find them.
 - Apps don't set it in such a feed; the server replaces what they send. When the feed is opened or closed for comments, the server updates the posts in all archives. A comment changes nothing else in the post, and gives it no `date_modified`.
 
-**Edits and deletes** follow the feed's policy (RFC-4 "Edits and deletes"). An edit of a published comment goes into the inbox again, marked as an edit; the published version stays until the owner approves the new one, which keeps its `id` and `date_published` and gets a `date_modified`. A resubmission without changes is accepted at once. A deleted comment is removed from the comment feed and the counts. When a post is deleted, its comment feed goes with it.
+**Edits and deletes** follow the feed's policy (RFC-4 "Edits and deletes"). An edit of a published comment goes into the inbox again, marked as an edit; the published version stays until the owner approves the new one, which keeps its `id` and `date_published` and gets a `date_modified`. A resubmission without changes is accepted at once. A deleted comment is removed from the comment feed and the counts, together with all replies to it, as RFC-4 requires. When a post is deleted, all comment feeds of its thread go with it.
 
-**Limits.** The server refuses to approve a comment when the post has as many comments as `commentLimit` (RFC-4, default 1000) allows. A comment feed is a single file; very long threads may need paging later (see [Open questions](#open-questions)).
+**Limits.** The server refuses to approve a comment when the post has as many comments, on all levels, as `commentLimit` (RFC-4, default 1000) allows (`comment-limit`), and a reply that is deeper than `maxDepth` allows by then (`max-depth`). A comment feed is a single file; very long threads may need paging later (see [Open questions](#open-questions)).
 
 ## Example
 
@@ -519,6 +520,6 @@ A named feed `photos` looks the same, with `"feed_url": "https://tim.example.com
 
 - **WebSub.** Since the server writes every kept feed, it knows when one changes: a later version could notify a hub, or be one, and `hubs` would become a field the server sets. Not yet.
 - **Feed titles in `host-meta.json`.** An app that lists the owner's feeds has to fetch each one to show its title. Should the host-meta endpoint accept a `titles` object for links, as the JSON form of host-meta allows?
-- **Threads and long comment feeds.** Replies to comments would get comment feeds of their own (`comments/<index>/<comment id>.json`), and each comment its own `_source.comments`. A post with hundreds of comments may need its comment feed split into RFC-13 archives.
+- **Long comment feeds.** A post with hundreds of comments may need its comment feed split into RFC-13 archives.
 - **Removing published comments.** So far a comment leaves its comment feed only when its author deletes it. The owner will need a way to take one down, e.g. an action in a feed of the published comments.
 - **Names and URIs.** The link relation `https://bigwide.net/ns/feed` is a placeholder, like the URIs of RFC-6, to be published on bigwide.net.

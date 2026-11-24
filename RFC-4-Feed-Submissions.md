@@ -67,8 +67,8 @@ The diagram numbers its steps on its own. Its steps 4–6 run after the server h
   <rm:submissions>
     <rm:url>https://rm.example.org/groups/twowaves/mention</rm:url>
     <rm:tos>https://twowavesandadot.blog/discussion/tos.html</rm:tos>
-    <rm:policies type="posts" minLength="10" maxLength="8000" title="required" allowLinks="true" … commentLimit="1000"/>
-    <rm:policies type="comments" minLength="10" maxLength="4000" title="none" allowLinks="true" … commentLimit="20" maxDepth="5"/>
+    <rm:policies type="posts" minLength="10" maxLength="8000" title="required" allowLinks="true" …/>
+    <rm:policies type="comments" minLength="10" maxLength="4000" title="none" allowLinks="true" … commentLimit="500" maxDepth="5"/>
     <rm:republish>full</rm:republish>
   </rm:submissions>
 </channel>
@@ -87,8 +87,8 @@ The namespace URI is `https://rssmention.bigwide.net/`. Readers should also acce
   "url": "https://rm.example.org/groups/twowaves/mention",
   "tos": "https://twowavesandadot.blog/discussion/tos.html",
   "policies": {
-    "posts": { "minLength": 10, "maxLength": 8000, "title": "required", "allowLinks": true, "commentLimit": 1000 },
-    "comments": { "minLength": 10, "maxLength": 4000, "title": "none", "allowLinks": true, "commentLimit": 20, "maxDepth": 5 }
+    "posts": { "minLength": 10, "maxLength": 8000, "title": "required", "allowLinks": true },
+    "comments": { "minLength": 10, "maxLength": 4000, "title": "none", "allowLinks": true, "commentLimit": 500, "maxDepth": 5 }
   },
   "republish": "full"
 }
@@ -138,7 +138,7 @@ A missing rule has the default value from the table below. Clients and servers m
 | `requireSocialSpec` | boolean | `false` | The author must declare a `socialspec` account, in the item or its feed, whose host is the author feed's host. This RFC then uses the domain as the author's identity; without it, the feed. See [Authorship](#authorship). |
 | `allowEdit` | boolean | `false` | Re-sending the webmention updates the republished item. |
 | `allowDelete` | boolean | `false` | Re-sending it after the item was removed from the author feed (or the feed answers 404/410) deletes the republished item. |
-| `commentLimit` | integer | `1000` | For posts: the maximum number of comments on all levels. For comments: the maximum number of direct replies to one comment. |
+| `commentLimit` | integer | `1000` | Comments only: the maximum number of comments on one post, on all levels, replies to comments included. |
 | `maxDepth` | integer | `5` | Comments only: how deep replies can be nested. Replies to a post have depth 1. |
 
 **Extending.** Servers may add rules. Clients ignore rules they don't know, and should then simply submit and let the server decide.
@@ -424,13 +424,13 @@ The group feed `https://rm.example.org/groups/twowaves/posts.json`, as rssmentio
         "minLength": 10, "maxLength": 8000, "urlAutoLinking": true, "allowStyle": true, "allowLinks": true,
         "allowCode": true, "allowQuote": false, "allowImages": false, "allowTables": false,
         "allowLists": true, "allowHeadlines": true, "requireSocialSpec": true, "title": "required",
-        "allowEdit": false, "allowDelete": false, "commentLimit": 1000
+        "allowEdit": false, "allowDelete": false
       },
       "comments": {
         "minLength": 10, "maxLength": 4000, "urlAutoLinking": true, "allowStyle": true, "allowLinks": true,
         "allowCode": true, "allowQuote": false, "allowImages": false, "allowTables": false,
         "allowLists": false, "allowHeadlines": false, "requireSocialSpec": true, "title": "none",
-        "allowEdit": false, "allowDelete": false, "commentLimit": 20, "maxDepth": 5
+        "allowEdit": false, "allowDelete": false, "commentLimit": 500, "maxDepth": 5
       }
     },
     "republish": "full"
