@@ -61,6 +61,7 @@ How the owner sees their mentions is [Inbox Feeds (RFC-12)](https://github.com/b
 | [RFC 6415](https://www.rfc-editor.org/rfc/rfc6415) `host-meta.json`, as in RFC-6 | Finding the mention endpoint of a domain. |
 | `source:inReplyTo`, `source:account` and their JSON Feed form from [RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md) | What a post answers, and whose post that is. |
 | RFC-4 conventions | Items referenced as feed URL + `#id`, author feeds, archives, and the server that republishes comments. |
+| RFC-4 `commenting` | `notifyReplies: false`: the author of an item doesn't want reply mentions. |
 | [microformats2](https://microformats.org/wiki/h-entry) `h-entry` and `u-in-reply-to` | Finding the post and its reply link in an HTML page. |
 
 **New in this RFC.**
@@ -69,6 +70,7 @@ How the owner sees their mentions is [Inbox Feeds (RFC-12)](https://github.com/b
 - **Handles in text**: how a post names a domain, and how both sides find it. See [Handles](#handles).
 - **Domains and feed items as targets.** The target of a webmention is the domain itself, or the item that is answered. See [Target](#target).
 - **Who sends**: the publishing system, and for feed submissions the server that republishes them, never the author. See [Who sends](#who-sends).
+- **Opting out of reply mentions**, per item, with RFC-4's `notifyReplies`. See [Opting out](#opting-out).
 
 ## Roles
 
@@ -122,16 +124,27 @@ The author is the item's socialspec account (`<source:account service="socialspe
 
 To read the account, the sender fetches the feed in the target, unless it has a current copy, and finds the item as RFC-4 does, following archive pages if needed. A sender that publishes the answered item itself, such as an RFC-4 server answering an item in its own feeds, looks it up directly.
 
+If the answered item says `notifyReplies: false`, there is no one to notify either. See [Opting out](#opting-out).
+
 Some replies have no author to notify:
 
 - **A new post in a group** has the group feed itself as `inReplyTo`, without an `#id`. It answers no one.
 - **A reply with a permalink** as `inReplyTo`, e.g. `https://rss.chat/?id=204`, as RFC-1 allows, doesn't name a feed item. Senders don't send reply mentions for it.
 
+### Opting out
+
+The author of an item can decline reply mentions with RFC-4's `commenting` extension: `_commenting.notifyReplies: false` in JSON Feed, `<rm:commenting><rm:notifyReplies>false</rm:notifyReplies></rm:commenting>` in RSS. The sender reads it from the answered item, together with the account, and sends no reply mention for an item that says `false`.
+
+- **Comments.** The author writes the flag on the item in their author feed. The RFC-4 server stores it when it accepts the submission, republishes it on the comment, and respects it when it publishes replies, without fetching the author feed again. To change it later, the author changes the item and re-sends the RFC-4 webmention; RFC-4 accepts that even when the feed allows no edits.
+- **Posts.** A blog or an app that publishes the owner's feed writes the flag on posts whose author doesn't want to hear about comments.
+- **Only replies.** A reply that also names the author by handle still notifies them, with a mention by name.
+- **Everything.** An owner who wants no mentions at all, or no reply mentions at all, removes the link from `host-meta.json`, or lets their receiver drop them. The flag is for single items: e.g. a comment whose thread the author doesn't want to follow.
+
 ### Both
 
 A post may mention several accounts, and may both answer and name the same one. The sender notifies each account once per post:
 
-- If the account is the author of the answered item, it sends the reply mention only.
+- If the account is the author of the answered item, it sends the reply mention only. If the answered item opted out of reply mentions, it sends a mention by name instead, if the post names the account.
 - Otherwise, it sends one mention by name.
 - It doesn't notify the post's own author, e.g. someone who answers their own comment or names themselves.
 - It should notify at most 20 accounts per post and may ignore the rest. Receivers may treat posts with many handles as spam.
@@ -376,6 +389,7 @@ When Alice answers Bob, her client submits her comment to the group the same way
 
 - Send mentions only for posts they publish; for RFC-4 submissions, only as the server that republishes them, after acceptance and moderation, with the republished item as `source`. Never send mentions for an item in an author feed submitted under RFC-4.
 - Find handles as in [Handles](#handles), and reply authors as in [Replies](#replies). Notify each account at most once per post, never the post's own author, and at most about 20 accounts per post.
+- Send no reply mention for an answered item with `notifyReplies: false` ([Opting out](#opting-out)). As an RFC-4 server, store and republish the flag of submitted items.
 - Discover endpoints through `host-meta.json` only, over HTTPS, with caching; send nothing to domains without the link.
 - Send `source` and `target` as defined, after the post is publicly visible, asynchronously, with retries for network errors, `5xx` and `429` only.
 - Resend after edits and deletes to every account mentioned before or after.

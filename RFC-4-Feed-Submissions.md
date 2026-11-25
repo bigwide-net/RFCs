@@ -14,7 +14,7 @@ This proposal lets a feed accept comments, and optionally posts, from other feed
 The proposal adds two things to RSS (namespace `https://rssmention.bigwide.net/`, prefix `rm:`) and JSON Feed:
 
 - **`submissions`**, on the feed: where to send the webmention, the terms of service, and the rules a submission must follow (title, length, allowed HTML, comment limits, editing).
-- **`commenting`**, on an item: whether the item accepts comments.
+- **`commenting`**, on an item: whether the item accepts comments, and whether its author wants to be notified of replies.
 
 Everything else comes from existing specs. Replies, comment feeds, counts, Markdown and accounts use the [source namespace](https://source.scripting.com/) in RSS and [RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md) in JSON Feed. The allowed formatting is [Comment HTML and Markdown (RFC-5)](https://github.com/bigwide-net/RFCs/blob/main/RFC-5-Comment-HTML.md). Sending a submission is a plain webmention.
 
@@ -155,18 +155,27 @@ The content of a submission must be **Comment Markdown** or **Comment HTML**, de
 
 ## Item: `commenting`
 
-`commenting` says whether an item accepts comments.
+`commenting` says whether an item accepts comments, and whether its author wants to be notified of replies.
 
 ```xml
-<rm:commenting><rm:allowComments>false</rm:allowComments></rm:commenting>
+<rm:commenting>
+  <rm:allowComments>false</rm:allowComments>
+  <rm:notifyReplies>false</rm:notifyReplies>
+</rm:commenting>
 ```
 
 ```json
 "_commenting": {
   "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md",
-  "allowComments": false
+  "allowComments": false,
+  "notifyReplies": false
 }
 ```
+
+| JSON `_commenting` | RSS `rm:commenting` | Default | Meaning |
+| --- | --- | --- | --- |
+| `allowComments` | `<rm:allowComments>` | `true` | Whether the item accepts comments. |
+| `notifyReplies` | `<rm:notifyReplies>` | `true` | Whether the item's author is notified of replies to it, with a reply mention ([RFC-11](https://github.com/bigwide-net/RFCs/blob/main/RFC-11-Mentions.md)). |
 
 **`allowComments` defaults to `true`.** If the feed has `submissions` with a `comments` policy, every item accepts comments unless it says `false`. Items don't need `commenting` to be open for comments.
 
@@ -175,7 +184,14 @@ It is used in both directions:
 - **In a target feed**, on posts: `false` means the post is closed, for example by its author or a moderator. Clients should hide the reply button, and the server rejects comments with `400`.
 - **In an author feed**, on a submitted post: `false` asks the server to publish the post with comments disabled.
 
-`allowComments` must be a boolean in JSON and `true` or `false` in RSS. Readers ignore other values, and then use the default.
+**`notifyReplies` defaults to `true`.** When someone replies to an item, the server that republishes the reply notifies the item's author ([RFC-11](https://github.com/bigwide-net/RFCs/blob/main/RFC-11-Mentions.md#replies)). `false` opts out:
+
+- **In an author feed**, on a submitted item: the author doesn't want to hear about replies to this comment or post. The server republishes the item with `notifyReplies: false`, and sends no reply mentions for it. A client may let the author choose for each comment, or write `false` on every item if the author never wants reply mentions.
+- **In a target feed**, on any item, republished or not: senders don't send reply mentions to the item's author. The flag covers replies only. A reply that also names the author by handle still notifies them, with a mention by name.
+
+The author changes their mind by changing the item and re-sending the webmention. See [Edits and deletes](#edits-and-deletes).
+
+Both fields must be booleans in JSON and `true` or `false` in RSS. Readers ignore other values, and then use the default.
 
 ## Reading in the client: CORS
 
@@ -262,7 +278,7 @@ Because the identity is the domain, not the feed, the author can submit from any
 
 ### What is republished
 
-The server copies the title, the content (both HTML and, if given, Markdown), the author's name (`dc:creator`, `author`, `authors[0].name`), the item's `link`/`url` and the verified account. It assigns a new guid. The publication date is the item's own if that is close to the time of submission (rssmention allows 30 minutes) and the time of submission otherwise, so authors can't backdate or pin posts.
+The server copies the title, the content (both HTML and, if given, Markdown), the author's name (`dc:creator`, `author`, `authors[0].name`), the item's `link`/`url`, the verified account and `notifyReplies: false`. It assigns a new guid. The publication date is the item's own if that is close to the time of submission (rssmention allows 30 minutes) and the time of submission otherwise, so authors can't backdate or pin posts.
 
 ## Response and status
 
@@ -301,7 +317,7 @@ Status pages are short-lived: rssmention keeps them for at least an hour. Client
 | `empty-content`, `too-short`, `too-long`, `malformed-html`, `forbidden-element`, `bad-nesting`, `missing-attribute`, `invalid-url`, `url-too-long`, `link-text-too-long`, `weird-formatting` | Content rules, see RFC-5. Servers may define more content codes. |
 | `comments-disabled`, `comment-limit`, `max-depth`, `target-gone` | The target no longer accepts the comment. |
 | `link-missing` | `republish` is `summary` and the item has no link to its full text. |
-| `edit-not-allowed` | The source was submitted before and `allowEdit` is not set. |
+| `edit-not-allowed` | The source was submitted before, `allowEdit` is not set, and more than `notifyReplies` changed. |
 | `moderation-rejected`, `moderation-unavailable` | The server's moderation rejected the item, or could not run. |
 
 ## Edits and deletes
@@ -310,7 +326,9 @@ The server remembers which source became which guid. Sending a webmention for th
 
 - **updates** the republished item if `allowEdit` is set. The target must stay the same; the item keeps its guid and publication date, and gets a `date_modified`.
 - **deletes** it, together with all replies, if `allowDelete` is set and the author feed answers 404 or 410, or no longer contains the item: neither the feed nor any of the pages linked from it (see [Archived items](#archived-items)). A server that gave up before the end of the chain doesn't delete.
-- is rejected with `400` if neither is set.
+- is rejected if neither is set, with `400`, or with `edit-not-allowed` on the status page.
+
+**Changing `notifyReplies`** is always allowed: a resubmission that changes nothing but `notifyReplies` updates the republished item even without `allowEdit`, and needs no moderation. This is how an author mutes the replies to a comment after it was published. Since that only shows after fetching the author feed, a server that knows the source was republished accepts the webmention with `201`, and reports `edit-not-allowed` on the status page if more than `notifyReplies` changed.
 
 ## Mapping between RSS and JSON Feed
 
@@ -323,6 +341,7 @@ The server remembers which source became which guid. Sending a webmention for th
 | `_submissions.policies.comments` | `<rm:policies type="comments" …/>` |
 | `_submissions.republish` | `<rm:republish>` |
 | item `_commenting.allowComments` | `<rm:commenting><rm:allowComments>` in the item |
+| item `_commenting.notifyReplies` | `<rm:commenting><rm:notifyReplies>` in the item |
 
 Fields used from RFC-1 and the source namespace:
 
@@ -342,6 +361,7 @@ Fields used from RFC-1 and the source namespace:
 - Treat the author feed as untrusted: fetch it with a size and time limit, refuse private network addresses, and never fetch your own URLs.
 - Process submissions one at a time per target feed, or lock, so that comment limits and counts stay correct.
 - Republished items carry `source:inReplyTo` (comments) and `source:comments` (posts and comments), so a reader can walk the thread without knowing this proposal.
+- Notify the people that republished items answer or name, with [RFC-11](https://github.com/bigwide-net/RFCs/blob/main/RFC-11-Mentions.md) mentions, and send no reply mention for an item with `notifyReplies: false`.
 - Serve target feeds, comment feeds, archives, the endpoint and the status pages with `Access-Control-Allow-Origin: *`. See [Reading in the client: CORS](#reading-in-the-client-cors).
 
 **Clients**
@@ -350,6 +370,7 @@ Fields used from RFC-1 and the source namespace:
 - Write `inReplyTo` exactly as the target, and keep the item in the author feed or in a page linked from it with `next_url` (`<atom:link rel="next">` in RSS). If it drops out of both and the server allows deletes, the next webmention for it deletes the comment.
 - Fetch target and comment feeds directly, when the user opens or refreshes a thread, not through a server-side feed reader that refreshes them every hour.
 - Poll the status page with a growing interval, and stop after a few minutes. A `waiting` status that never changes means the server restarted; resubmit.
+- Write `notifyReplies: false` on items whose author doesn't want to hear about replies, and let the author change it later: change the item and re-send the webmention.
 
 ## Example: comments on a blog
 
