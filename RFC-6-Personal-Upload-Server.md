@@ -160,7 +160,8 @@ The `href` points to the configuration document. Its path is chosen by the serve
   ],
   "host_meta_endpoint": "https://tim.example.com/pups/host-meta",
   "max_upload_bytes": 26214400,
-  "spec_version": "0.1"
+  "spec_version": "0.1",
+  "implementation": { "name": "pups-php", "version": "0.1.0" }
 }
 ```
 
@@ -179,6 +180,7 @@ The `href` points to the configuration document. Its path is chosen by the serve
 | `comment_endpoint` | Present if the server accepts [comments (RFC-4)](https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md) on posts of the owner's feeds and writes them into the owner's inbox. See [Built-in receiver](#built-in-receiver). |
 | `max_upload_bytes` | **Required.** The largest file the server accepts, in bytes. |
 | `spec_version` | **Required.** The version of this proposal the server implements: `0.1`. |
+| `implementation` | Recommended. The server software: `name` (a string, e.g. `pups-php`) and optionally `version`. Clients may use it to recognize and work around known problems of one implementation or of the hosting it typically runs on, e.g. a shared host whose image optimizer drops the CORS headers, and to name the server in error messages. They must not use it to detect features: those have fields of their own. Missing: unknown. |
 
 Clients ignore fields they don't know. The configuration document is authoritative: if it disagrees with the RFC 8414 metadata below, the configuration document wins.
 
@@ -374,7 +376,7 @@ The top-level properties of `host-meta.json` that describe the site, for profile
 | `https://bigwide.net/ns/theme-color` | The site's accent color, a CSS color, e.g. `#b0412e` | `/.well-known/about.md` |
 | `https://bigwide.net/ns/language` | The site's main language, a BCP 47 tag, e.g. `en` | `/.well-known/about.md` |
 | `https://bigwide.net/ns/avatar` | URL of a square image (at least 400 × 400 pixels) in `/pups/images/` | `/pups/images/` |
-| `https://bigwide.net/ns/banner` | URL of a wide image (3:1, at least 1500 × 500 pixels) in `/pups/images/` | `/pups/images/` |
+| `https://bigwide.net/ns/banner` | URL of a wide image (5:1, at least 2500 × 500 pixels) in `/pups/images/` | `/pups/images/` |
 | `https://bigwide.net/ns/webpup-footer` | URL of a Markdown file in `/pups/pages/` that is shown at the bottom of every page of the site, e.g. a copyright line and a link to the imprint | `/pups/pages/` |
 | `https://bigwide.net/ns/post-url-template` | The URL of a post's page on the site, as a template, e.g. `https://tim.example.com/p/{feed}/post/{index}`. See [Post URLs](#post-urls) | none: set by the owner, or by the server that installs the site's renderer |
 
