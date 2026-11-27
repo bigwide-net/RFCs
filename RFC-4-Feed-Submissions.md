@@ -65,7 +65,7 @@ The diagram numbers its steps on its own. Its steps 4–6 run after the server h
 <channel>
   …
   <rm:submissions>
-    <rm:url>https://rm.example.org/groups/twowaves/mention</rm:url>
+    <rm:url>https://rm.example.org/groups/twowaves/comment</rm:url>
     <rm:tos>https://twowavesandadot.blog/discussion/tos.html</rm:tos>
     <rm:policies type="posts" minLength="10" maxLength="8000" title="required" allowLinks="true" …/>
     <rm:policies type="comments" minLength="10" maxLength="4000" title="none" allowLinks="true" … commentLimit="500" maxDepth="5"/>
@@ -84,7 +84,7 @@ The namespace URI is `https://rssmention.bigwide.net/`. Readers should also acce
 ```json
 "_submissions": {
   "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md",
-  "url": "https://rm.example.org/groups/twowaves/mention",
+  "url": "https://rm.example.org/groups/twowaves/comment",
   "tos": "https://twowavesandadot.blog/discussion/tos.html",
   "policies": {
     "posts": { "minLength": 10, "maxLength": 8000, "title": "required", "allowLinks": true },
@@ -109,7 +109,7 @@ The namespace URI is `https://rssmention.bigwide.net/`. Readers should also acce
 
 **Posts, comments or both.** A blog announces only `comments`: readers comment on the blog's posts, but can't add posts to the blog. A discussion group announces both. A feed with `submissions` but neither policy accepts nothing; that only makes sense temporarily, for example while a group is closed.
 
-**Discovery.** The endpoint is also announced the standard webmention way, so generic webmention senders find it: `<atom:link rel="webmention" href="…"/>` in RSS and an HTTP `Link: <…>; rel="webmention"` header where the server can send one. `url` and the webmention link must name the same endpoint.
+**Discovery.** The endpoint is also announced the standard webmention way, so generic webmention senders find it: `<atom:link rel="webmention" href="…"/>` in RSS and an HTTP `Link: <…>; rel="webmention"` header where the server can send one. Usually the webmention link names the same endpoint as `url`. A server that takes classic webmentions, which generic senders send, at an endpoint of their own may name that one instead, and keep submissions apart from them. Clients send submissions to `url` only.
 
 ### Republishing
 
@@ -220,7 +220,7 @@ Author feeds are fetched by the server, not the client, and don't need CORS for 
 The client publishes the item in the author feed, then sends a webmention as the [Webmention spec](https://www.w3.org/TR/webmention/#sending-webmentions) describes: a `POST` to `url` with `source` and `target`, form-encoded. Servers should accept a JSON body with the same two fields as well.
 
 ```
-POST /groups/twowaves/mention HTTP/1.1
+POST /groups/twowaves/comment HTTP/1.1
 Host: rm.example.org
 Content-Type: application/x-www-form-urlencoded
 
@@ -241,7 +241,7 @@ When the target requires a socialspec account, an author feed only needs to be o
 
 Feeds that keep only their newest items often move older ones into archive pages. The item that `source` names may therefore no longer be in the feed at that URL, but in a page linked from it. (Authors can avoid this by using the URL of a page the item never leaves as `source`, such as the archives of JSON Feed Archives, [RFC-13](https://github.com/bigwide-net/RFCs/blob/main/RFC-13-JSON-Feed-Archives.md).) `source` doesn't change when that happens: it always names the feed the item was published in.
 
-- If the item is not in the fetched feed, the server follows the feed's pagination and looks for the guid there: `next_url` in JSON Feed, `<atom:link rel="next">` ([RFC 5005](https://www.rfc-editor.org/rfc/rfc5005)) in RSS. It goes on from page to page until it finds the item or reaches the end.
+- If the item is not in the fetched feed, the server follows the feed's pagination and archives and looks for the guid there: `next_url`, and in a feed file with archives `_archive.archive_url` ([RFC-13](https://github.com/bigwide-net/RFCs/blob/main/RFC-13-JSON-Feed-Archives.md)), in JSON Feed; `<atom:link rel="next">` and `<atom:link rel="prev-archive">` ([RFC 5005](https://www.rfc-editor.org/rfc/rfc5005)) in RSS. It goes on from page to page until it finds the item or reaches the end.
 - It follows only pages on the same host as `source`, never one it has seen already, and fetches each with the same limits as the author feed.
 - The server is free to give up after a limit of its choice, e.g. a number of pages or an amount of time. Servers should follow at least 10 pages.
 - **Giving up is not a delete.** If the server gives up before it reaches the end of the chain, it treats the item as not found (`item-not-found`), never as deleted (see [Edits and deletes](#edits-and-deletes)).
@@ -260,6 +260,7 @@ Posts and comments are referenced by **the feed that contains them plus `#guid`*
 | New post in a group | the group feed, without fragment | `https://rm.example.org/groups/twowaves/posts.xml` |
 
 - The item in the author feed must have `inReplyTo` (`source:inReplyTo`, `_source.inReplyTo`) with the same value as `target`. This is the link from source to target that webmention requires, and it lets readers of the author feed show the reply in context.
+- The item should also name the target feed in `inReplyTo`: its URL as `feedUrl` (the target without `#guid`) and a title as `feedTitle` ([RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md), `<source:inReplyTo feedUrl feedTitle>`). A reader then shows "In reply to Alice's blog" instead of a bare URL. For a post, the title is the feed's. For a comment, it is the comment's own title; a comment without one gets no `feedTitle`, and the reader names it, e.g. "In reply to a comment by Bob", since the title of a comment feed says little. The server compares only the value with `target`.
 - If a feed is published as both RSS and JSON Feed, the two count as the same target. The server compares them after decoding the fragment.
 - A client finds the comment feed of a post or comment in its `comments.feedUrl` (`source:comments feedUrl`). Adding `#guid` gives the target for a reply. For a blog, the server publishes the comment feeds, and the blog's posts point to them with `source:comments`.
 - A post that is in an archive may also be targeted through the archive feed: `…/archive/posts-3.xml#a8Kd03XpQz`. New posts must target the group feed itself.
@@ -279,6 +280,8 @@ Because the identity is the domain, not the feed, the author can submit from any
 ### What is republished
 
 The server copies the title, the content (both HTML and, if given, Markdown), the author's name (`dc:creator`, `author`, `authors[0].name`), the item's `link`/`url`, the verified account and `notifyReplies: false`. It assigns a new guid. The publication date is the item's own if that is close to the time of submission (rssmention allows 30 minutes) and the time of submission otherwise, so authors can't backdate or pin posts.
+
+The server copies no actions: neither the item's `_actions` nor the fallback HTML for them, the elements with the class `without-extension-actions` ([RFC-9](https://github.com/bigwide-net/RFCs/blob/main/RFC-9-Feed-Actions.md) "Fallback HTML"), which it removes from the content with everything they contain. They lead to the system the submission comes from, not to the target, and an owner who reviews the submission would take them for the server's own.
 
 ## Response and status
 
@@ -348,6 +351,7 @@ Fields used from RFC-1 and the source namespace:
 | JSON `_source` | RSS | Used for |
 | --- | --- | --- |
 | `inReplyTo` | `<source:inReplyTo>` | The target of a submission; the parent of a republished comment. |
+| `inReplyTo.feedUrl`, `feedTitle` | `<source:inReplyTo feedUrl feedTitle>` | The feed that holds the target or parent, and the title of that feed, or of the comment. |
 | `comments.feedUrl`, `count` | `<source:comments feedUrl count>` | Where the replies to a post or comment are, and how many. |
 | `comments.total` | — | Comments on all levels of a post. |
 | `markdown` | `<source:markdown>` | The submitted text; republished alongside the HTML. |
@@ -360,14 +364,14 @@ Fields used from RFC-1 and the source namespace:
 - Put `submissions` in the target feed and every feed you publish for it, with the rules that are actually enforced. A client that follows them must not be rejected for breaking a rule.
 - Treat the author feed as untrusted: fetch it with a size and time limit, refuse private network addresses, and never fetch your own URLs.
 - Process submissions one at a time per target feed, or lock, so that comment limits and counts stay correct.
-- Republished items carry `source:inReplyTo` (comments) and `source:comments` (posts and comments), so a reader can walk the thread without knowing this proposal.
+- Republished items carry `source:inReplyTo` (comments) and `source:comments` (posts and comments), so a reader can walk the thread without knowing this proposal. A republished comment's `inReplyTo` names the feed that holds its parent and a title, as the server knows them, not as the author's item claims them: the feed's title for a comment on a post, the parent's title for a reply to a comment (none if it has none).
 - Notify the people that republished items answer or name, with [RFC-11](https://github.com/bigwide-net/RFCs/blob/main/RFC-11-Mentions.md) mentions, and send no reply mention for an item with `notifyReplies: false`.
 - Serve target feeds, comment feeds, archives, the endpoint and the status pages with `Access-Control-Allow-Origin: *`. See [Reading in the client: CORS](#reading-in-the-client-cors).
 
 **Clients**
 
 - Read the rules before the author starts writing. Offer only the enabled features and enforce the limits in the editor (see RFC-5). Show the terms of service, and that the comment will be published, in full or as an abstract, if `republish` is `full` or `summary`.
-- Write `inReplyTo` exactly as the target, and keep the item in the author feed or in a page linked from it with `next_url` (`<atom:link rel="next">` in RSS). If it drops out of both and the server allows deletes, the next webmention for it deletes the comment.
+- Write `inReplyTo` with exactly the target as its value, the target feed's URL as `feedUrl` and the title described in [Target and `inReplyTo`](#target-and-inreplyto) as `feedTitle`, and keep the item in the author feed or in a page or archive linked from it (`next_url` or RFC-13 `_archive.archive_url` in JSON Feed, `<atom:link rel="next">` or `rel="prev-archive"` in RSS). If it drops out of both and the server allows deletes, the next webmention for it deletes the comment.
 - Fetch target and comment feeds directly, when the user opens or refreshes a thread, not through a server-side feed reader that refreshes them every hour.
 - Poll the status page with a growing interval, and stop after a few minutes. A `waiting` status that never changes means the server restarted; resubmit.
 - Write `notifyReplies: false` on items whose author doesn't want to hear about replies, and let the author change it later: change the item and re-send the webmention.
@@ -383,7 +387,7 @@ Alice's blog feed `https://alice.example.com/feed.json` uses a comment server at
   "feed_url": "https://alice.example.com/feed.json",
   "_submissions": {
     "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md",
-    "url": "https://comments.example.org/groups/alice/mention",
+    "url": "https://comments.example.org/groups/alice/comment",
     "policies": {
       "comments": { "minLength": 2, "maxLength": 2000, "allowStyle": true, "urlAutoLinking": true, "title": "none", "requireSocialSpec": true }
     },
@@ -412,7 +416,11 @@ Bob's app publishes his comment in one of his comment feeds, `https://bob.exampl
   "content_html": "<p>Agreed, but discovery is hard.</p>",
   "_source": {
     "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
-    "inReplyTo": "https://alice.example.com/feed.json#post-42"
+    "inReplyTo": {
+      "value": "https://alice.example.com/feed.json#post-42",
+      "feedUrl": "https://alice.example.com/feed.json",
+      "feedTitle": "Alice's blog"
+    }
   }
 }
 ```
@@ -438,7 +446,7 @@ The group feed `https://rm.example.org/groups/twowaves/posts.json`, as rssmentio
   "feed_url": "https://rm.example.org/groups/twowaves/posts.json",
   "_submissions": {
     "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-4-Feed-Submissions.md",
-    "url": "https://rm.example.org/groups/twowaves/mention",
+    "url": "https://rm.example.org/groups/twowaves/comment",
     "tos": "https://twowavesandadot.blog/discussion/tos.html",
     "policies": {
       "posts": {
@@ -496,7 +504,11 @@ Bob's comment in his comment feed `https://bob.example.net/appdata/app.example/c
   "_source": {
     "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
     "markdown": "Agreed, but discovery is hard.",
-    "inReplyTo": "https://rm.example.org/groups/twowaves/posts.json#a8Kd03XpQz"
+    "inReplyTo": {
+      "value": "https://rm.example.org/groups/twowaves/posts.json#a8Kd03XpQz",
+      "feedUrl": "https://rm.example.org/groups/twowaves/posts.json",
+      "feedTitle": "Two Waves RSS Discussion"
+    }
   }
 }
 ```
@@ -518,7 +530,11 @@ target=https://rm.example.org/groups/twowaves/posts.json#a8Kd03XpQz
     "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
     "markdown": "Agreed, but discovery is hard.",
     "accounts": { "socialspec": "@bob.example.net" },
-    "inReplyTo": "https://rm.example.org/groups/twowaves/posts.json#a8Kd03XpQz",
+    "inReplyTo": {
+      "value": "https://rm.example.org/groups/twowaves/posts.json#a8Kd03XpQz",
+      "feedUrl": "https://rm.example.org/groups/twowaves/posts.json",
+      "feedTitle": "Two Waves RSS Discussion"
+    },
     "comments": {
       "feedUrl": "https://rm.example.org/groups/twowaves/comments/a8Kd03XpQz/a8Kd03XpQz-k2m9x/comments.json",
       "count": 0

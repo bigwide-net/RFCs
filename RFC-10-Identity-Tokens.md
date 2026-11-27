@@ -20,7 +20,7 @@ Content-Type: application/json
 The protocol is built from existing specs:
 
 - **Getting a token**: [OAuth 2.0 Token Exchange (RFC 8693)](https://www.rfc-editor.org/rfc/rfc8693) at the PUPS token endpoint. The app trades its PUPS access token for a token for another server.
-- **The token**: a JWT in the [JWT Profile for OAuth 2.0 Access Tokens (RFC 9068)](https://www.rfc-editor.org/rfc/rfc9068), signed by the PUPS server, valid for one server and at most five minutes.
+- **The token**: a JWT in the [JWT Profile for OAuth 2.0 Access Tokens (RFC 9068)](https://www.rfc-editor.org/rfc/rfc9068), signed by the PUPS server, valid for one server and at most five minutes. A **read token** for fetching personal feeds lives up to 24 hours, so that a reader needs one exchange per server and day, not one per fetch.
 - **Sending it**: an ordinary bearer token ([RFC 6750](https://www.rfc-editor.org/rfc/rfc6750)).
 - **Checking it**: the server finds the PUPS server through the domain in the token, as RFC-6 discovery does, and its public keys in a [JWK Set (RFC 7517)](https://www.rfc-editor.org/rfc/rfc7517).
 
@@ -80,16 +80,17 @@ Some things it makes possible:
 
 | Spec | Rules of this RFC |
 | --- | --- |
-| RFC 8693 | Only the PUPS access token as subject token, one `audience`, which must be an `https` origin, and no other parameters. |
-| RFC 9068 | `RS256` only. `aud` is a single origin, `sub` is the owner's `me`, and tokens live at most five minutes. |
+| RFC 8693 | Only the PUPS access token as subject token, one `audience`, which must be an `https` origin, optionally `scope=read`, and no other parameters. |
+| RFC 9068 | `RS256` only. `aud` is a single origin, `sub` is the owner's `me`, and tokens live at most five minutes, read tokens at most 24 hours. |
 
 **New in this RFC.**
 
 - **The scope `identity-tokens`**, its consent screen and its log. See [The PUPS side](#the-pups-side).
 - **`jwks_uri` in the configuration document** of RFC-6. The name comes from RFC 8414.
 - **Finding the issuer from the subject.** An RFC 9068 server normally knows its issuers in advance. Here, any domain can be the subject, and the server finds the issuer that the domain names. See [Checking a token](#checking-a-token).
+- **Read tokens**, which live longer and are good only for reading. See [Read tokens](#read-tokens).
 - **The `identity` field for Feed Actions**, and what readers show for it. See [Feed Actions](#feed-actions).
-- **Subscribing to a feed as the user.** See [Personal feeds](#personal-feeds).
+- **Subscribing to a feed as the user**, the access levels `restricted`, `personal` and `optional`, the link property `https://bigwide.net/ns/access` that announces them in `host-meta.json`, and the `identity` parameter of the Bearer challenge. See [Personal feeds](#personal-feeds).
 
 ## Roles
 
@@ -137,12 +138,35 @@ An identity token is a JWT that follows RFC 9068, signed with `RS256`.
 | `sub` | The owner's identity: `me` from RFC-6, `https://<host>/`. The host is lowercase, in ASCII form, without port; the path is `/`. |
 | `aud` | The server the token is for: one `https` origin, as a single string, e.g. `https://polls.example.com`, or `https://polls.example.com:8443` with a port other than 443. Never an array. |
 | `client_id` | The app's `client_id` from RFC-6. The PUPS server verified it when the owner granted access. |
-| `iat`, `exp` | Issued at, and expiry, in seconds since 1970 (UTC). `exp` is at most 300 seconds after `iat`; 60 seconds is recommended. |
+| `iat`, `exp` | Issued at, and expiry, in seconds since 1970 (UTC). `exp` is at most 300 seconds after `iat`; 60 seconds is recommended. For a read token, at most 86,400 seconds (24 hours). |
+| `scope` | Only in a [read token](#read-tokens): `read`. |
 | `jti` | A unique identifier, at least 128 bits from a secure random generator. |
 
-The header's `typ` is `at+jwt`, as RFC 9068 requires, and `kid` names the key in the PUPS server's JWK Set. The token carries no `scope`: it grants nothing by itself, it only says who acts.
+The header's `typ` is `at+jwt`, as RFC 9068 requires, and `kid` names the key in the PUPS server's JWK Set. A token for an action carries no `scope`: it grants nothing by itself, it only says who acts.
 
 **The handle.** The user's handle is `@` followed by the host of `sub`, e.g. `@tim.example.com`, as in a [socialspec](https://socialspec.org) account. Apps show it to the user, and servers to everyone else.
+
+### Read tokens
+
+A reader polls each [personal feed](#personal-feeds) many times a day. With a new token for every fetch, each poll would also cost a request to the user's PUPS server, and a reader with many personal feeds would soon hit its rate limit. Therefore an app can ask for a **read token**: the same token, with `"scope": "read"` and a lifetime of up to 24 hours.
+
+```json
+{
+  "iss": "https://tim.example.com",
+  "sub": "https://tim.example.com/",
+  "aud": "https://comments.example.org",
+  "client_id": "https://app.example/oauth/client.json",
+  "scope": "read",
+  "iat": 1795084920,
+  "exp": 1795171320,
+  "jti": "q8Xb2LmN0vR5tYc7aWd1Ze"
+}
+```
+
+- **Only for reading.** Servers accept a read token only for `GET` and `HEAD` requests of feeds, never for an action or any other request that changes something. They answer those with `403` and `WWW-Authenticate: Bearer error="insufficient_scope"`.
+- **Used many times.** The app keeps a read token for each origin and sends it with every fetch of the feeds there that the user subscribed to as themselves, until shortly before it expires. Servers don't reject a read token they have seen before.
+- **Longer, but only for reading.** A read token that leaks, or that the app still holds when the owner revokes the grant, lets its holder read the user's personal feeds at that one server for up to 24 hours. It can't vote, moderate or post anything: actions always need a token of at most five minutes.
+- **Requested only for subscriptions.** The app asks for a read token only for the origin of a feed the user subscribed to as themselves, and forgets it when the user unsubscribes or makes the subscription anonymous.
 
 ## The PUPS side
 
@@ -193,11 +217,13 @@ grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange
 &audience=https%3A%2F%2Fpolls.example.com
 ```
 
+For a [read token](#read-tokens), the request adds `&scope=read`.
+
 The server checks:
 
 1. `subject_token` is a valid access token of this server, of a grant with the scope `identity-tokens`, issued to the `client_id` of the request. Otherwise: `invalid_grant`, or `invalid_scope` if the grant lacks the scope.
 2. `audience` is exactly one `https` origin: scheme, lowercase host in ASCII form, and a port only if it isn't 443; no path, not even `/`, no query, user info or fragment. The host is not `localhost`, `*.local`, `*.localhost` or an IP address. Otherwise: `invalid_target`.
-3. The request contains no `resource`, `scope`, `actor_token` or `requested_token_type` other than `urn:ietf:params:oauth:token-type:jwt`. Otherwise: `invalid_request`.
+3. The request contains no `resource`, `actor_token` or `requested_token_type` other than `urn:ietf:params:oauth:token-type:jwt`. Otherwise: `invalid_request`. A `scope` other than `read`: `invalid_scope`.
 4. The grant is within its rate limit, e.g. 60 tokens per minute. Otherwise: `429`.
 
 It answers:
@@ -210,6 +236,8 @@ It answers:
   "expires_in": 60
 }
 ```
+
+For a read token, the answer adds `"scope": "read"`, and `expires_in` is the token's lifetime, at most 86400. The server decides the lifetime; 24 hours is recommended. The app takes it from `expires_in`, not from its own assumptions.
 
 The field is called `access_token` because RFC 8693 calls it that; the token is the identity token. The PUPS server stores no identity tokens, but it logs each one it issues (see [Log](#log)). The token endpoint is already CORS-enabled (RFC-6), so browser apps can call it.
 
@@ -228,14 +256,14 @@ This is a second exception to RFC-6's rule that access tokens are valid only at 
 }
 ```
 
-- **Rotation.** To change the key, the server adds the new public key to the JWK Set, waits until every cache has seen it (the JWK Set's `max-age`, at most an hour), and then signs with the new key. It removes the old key five minutes after it signed the last token with it.
+- **Rotation.** To change the key, the server adds the new public key to the JWK Set, waits until every cache has seen it (the JWK Set's `max-age`, at most an hour), and then signs with the new key. It removes the old key once the last token it signed with it has expired: after five minutes, or after 24 hours if it signed read tokens.
 - **Compromise.** If the private key may have leaked, the server removes it from the JWK Set at once and creates a new one. Servers stop accepting the old key within their cache time, at most an hour. The apps page should offer the owner a button for this.
 
 ### Log
 
-The PUPS server records every identity token it issues: the time, the `client_id` and the `aud`. The apps page shows, for each app, the sites it acted on, how often and when it last did. The log is private to the owner, and kept for at least 30 days.
+The PUPS server records every identity token it issues: the time, the `client_id`, the `aud`, and whether it is a read token. The apps page shows, for each app, the sites it acted on, how often and when it last did. The log is private to the owner, and kept for at least 30 days.
 
-When the owner revokes a grant, the app gets no more identity tokens. Tokens it already has expire within five minutes. A server may let the owner block single audiences, for one app or for all.
+When the owner revokes a grant, the app gets no more identity tokens. Tokens for actions that it already has expire within five minutes, read tokens within 24 hours. A server may let the owner block single audiences, for one app or for all.
 
 ## Using identity tokens in an app
 
@@ -243,8 +271,8 @@ An app that holds the scope `identity-tokens`:
 
 1. **Only when the user knows.** It gets an identity token only when the user does something that the app has presented as done with their identity, at the server named there. Never in the background, never when it fetches, prefetches or previews something, and never because content asked for it without the user's action. A feature that the user explicitly set up for one server counts as knowing, e.g. a feed they subscribed to as themselves (see [Personal feeds](#personal-feeds)).
 2. **The audience from the URL.** `audience` is the origin of the URL the app is about to send the request to, taken from that URL and from nothing else, in particular not from a feed or a response.
-3. **One token per request.** It gets a new token for every request, and sends it only in that request, as `Authorization: Bearer <token>`. Servers may reject a token they have seen before.
-4. **Never the access token.** It sends its PUPS access token only to its PUPS server, as RFC-6 requires, and never to the server it acts on.
+3. **One token per request.** It gets a new token for every action, and sends it only in that request, as `Authorization: Bearer <token>`. Servers may reject a token they have seen before. The exception is a [read token](#read-tokens), which the app reuses for the fetches of the feeds the user subscribed to as themselves at that origin, and sends with nothing else.
+4. **Never the access token.** It sends its PUPS access token only to its PUPS server, as RFC-6 requires, and never to the server it acts on. It keeps read tokens as safely as its access token.
 5. **Show the handle.** Wherever the app says that something is done as the user, it shows the handle, e.g. `@tim.example.com`. If the app is connected to several domains, the user chooses which one acts, and the app shows that one.
 
 If a request with an identity token is redirected to another origin, the app doesn't send the token there.
@@ -255,11 +283,11 @@ A server that accepts identity tokens checks each one in this order, and rejects
 
 1. **Header.** The request carries `Authorization: Bearer <token>`. The JWT's header has `typ` `at+jwt` (or `application/at+jwt`), `alg` `RS256` and a `kid`. Any other `alg`, including `none`, is rejected.
 2. **Audience.** `aud` is a single string and equals the server's own origin, which the server knows from its configuration, never from the request's `Host` header. A server that runs on several origins compares with the one the request was sent to.
-3. **Lifetime.** `exp` is in the future and `iat` is not, each with at most 60 seconds of clock skew, and `exp` is at most 300 seconds after `iat`.
+3. **Lifetime and scope.** `exp` is in the future and `iat` is not, each with at most 60 seconds of clock skew. Without `scope`, `exp` is at most 300 seconds after `iat`. With `scope` `read`, at most 86,400 seconds, and the request is a `GET` or `HEAD` of a feed (otherwise `403` with `error="insufficient_scope"`). Any other `scope` is rejected.
 4. **Claims.** `iss`, `client_id` and `jti` are present, and `sub` is a canonical identity URL, `https://<host>/` as in [The token](#the-token).
 5. **Issuer.** The server runs RFC-6 discovery for the host of `sub`: it fetches `https://<host>/.well-known/host-meta.json`, takes the first link with the PUPS relation, and fetches the configuration document. Its `issuer` must equal `iss` exactly. This step ties the token to the domain: a PUPS server can sign tokens for anyone, but only the issuer that the domain itself names counts for that domain.
 6. **Signature.** The server fetches the JWK Set from the configuration document's `jwks_uri`, takes the key with the token's `kid`, which must be an RSA key of at least 2048 bits, and checks the signature.
-7. **Replay.** The server may remember each `jti` until its `exp`, and reject a token it has seen before.
+7. **Replay.** The server may remember each `jti` of a token without `scope` until its `exp`, and reject such a token if it has seen it before. Read tokens are meant to be used many times.
 
 The token then proves that the owner of the host of `sub` acts, through the app named by `client_id`. The server takes the identity only from `sub`, never from the body of the request. What the domain may do is the server's own decision.
 
@@ -356,7 +384,7 @@ Publishers therefore add the ordinary `actions` fallback ([RFC-8](https://github
 
 Tim picks *Pizza*. His reader gets a token for `https://polls.example.com` from his PUPS server and sends the vote with it. The server checks the token, records the vote for `tim.example.com`, and answers with the results, as in RFC-9's poll example. If Tim votes again, the server answers with "You already voted for Pizza" and the results.
 
-**Several moderators.** The Feed Readers group publishes its moderation queue at a capability URL that only its moderators know, as in RFC-9. The buttons have `identity`, so the server knows which moderator acts, and keeps the list of moderators' domains itself:
+**Several moderators.** The Feed Readers group keeps a list of its moderators' domains, and publishes its moderation queue as a `restricted` feed that only they can read (see [Personal feeds](#personal-feeds)). The buttons have `identity`, so the server knows which moderator acts:
 
 ```json
 "templates": {
@@ -371,7 +399,7 @@ Tim picks *Pizza*. His reader gets a token for `https://polls.example.com` from 
 }
 ```
 
-The reader shows *Sent as @tim.example.com to api.example.com* with the button. The server accepts the post, notes "Accepted by @tim.example.com", and answers `403` to domains that aren't moderators. If a moderator leaves, the group removes their domain from its list; the URL of the queue can stay the same, since its key no longer decides who may act.
+The reader shows *Sent as @tim.example.com to api.example.com* with the button. The server accepts the post, notes "Accepted by @tim.example.com", and answers `403` to domains that aren't moderators. If a moderator leaves, the group removes their domain from its list: from then on, their reader gets `403` for the queue and for the buttons. No URL or key changes for the others.
 
 ## Personal feeds
 
@@ -386,24 +414,86 @@ This is most useful on public [Feed Submissions (RFC-4)](https://github.com/bigw
 
 Public feeds can use it too, e.g. a poll that shows each subscriber their own vote after a refresh, where everyone else sees the plain poll.
 
+### Access levels
+
+A feed that uses identity tokens has one of three access levels:
+
+| Level | Meaning | Example |
+| --- | --- | --- |
+| `restricted` | Only some domains may read the feed, those on a list that the server keeps. All others get `403`. | The moderation queue of a group, for its moderators |
+| `personal` | Every domain may read the feed, and each gets its own version. A token is required. | `https://comments.example.org/me.json` |
+| `optional` | A public feed that shows a personal version to subscribers who send a token. | The poll that shows each subscriber their own vote |
+
+Feeds without identity tokens are `public`, which is the default everywhere. The level tells the reader what to offer before the user decides. The server alone decides who gets what.
+
+### Announcing a feed
+
+A domain lists its feeds in `host-meta.json` with the link relation `https://bigwide.net/ns/feed` ([RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#registering-feeds-in-host-metajson)). A feed that isn't public carries its level in the link property `https://bigwide.net/ns/access`, and its title in `titles`:
+
+```json
+{
+  "rel": "https://bigwide.net/ns/feed",
+  "type": "application/feed+json",
+  "href": "https://comments.example.org/groups/feed-readers/queue.json",
+  "titles": { "default": "Feed Readers: moderation queue" },
+  "properties": { "https://bigwide.net/ns/access": "restricted" }
+}
+```
+
+- **Values.** `restricted`, `personal` or `optional`. A link without the property, or with `public`, is a public feed. Readers treat an unknown value like `restricted`.
+- **Titles.** A reader can't fetch a `restricted` or `personal` feed before the user decided to subscribe as themselves, so the link should have a title. Without one, the reader shows the URL.
+- **Readers** show such a feed with its level, e.g. with a lock for `restricted`, and offer *Subscribe as @tim.example.com*. They never fetch it with a token to find out whether the user has access: that alone would tell the server who the user is.
+- **Web pages and profiles** that render the domain for visitors, such as webpup, leave out `restricted` and `personal` feeds, since a browser can't read them. They show `optional` feeds like public ones.
+- **Not a lock.** The property only describes the feed. Nothing becomes protected by it, and nothing becomes public without it.
+
+The link usually sits in the `host-meta.json` of the feed's own server, e.g. `https://comments.example.org/.well-known/host-meta.json`. A site may also list a feed on another server in its own `host-meta.json`, e.g. the moderation queue of its comments. A PUPS server serves every file with a public URL to everyone, and its private files have no links (see [RFC-6](https://github.com/bigwide-net/RFCs/blob/main/RFC-6-Personal-Upload-Server.md#private-areas)), so apps never set the property through the host-meta endpoint. Links to feeds on other servers are added by the owner.
+
+### The server's challenge
+
+A reader may also come to the feed through its URL alone, pasted by the user or linked from somewhere. The server tells it in the response, with a Bearer challenge ([RFC 6750](https://www.rfc-editor.org/rfc/rfc6750#section-3)) that carries the parameter `identity`:
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer realm="Feed Readers: moderation queue", identity="required"
+Content-Type: application/problem+json
+
+{ "type": "https://bigwide.net/ns/identity-required", "title": "This feed needs an identity token",
+  "detail": "Only the moderators of Feed Readers can read this feed. Subscribe with a reader that supports bigwide.net identity tokens." }
+```
+
+- **`identity="required"`** on a `401`: the feed is `restricted` or `personal`, and a fetch without a token gets nothing else.
+- **`identity="optional"`** on the normal `200` of an `optional` feed: a token would change the response. HTTP allows `WWW-Authenticate` on any response for this ([RFC 9110](https://www.rfc-editor.org/rfc/rfc9110#section-11.6.1)). Readers that don't know it ignore it.
+- **How to authenticate.** The parameter means: send an identity token of this RFC, with the origin of the feed URL as `audience`, as `Authorization: Bearer`. The challenge names no audience and no issuer. The audience always comes from the URL, and the issuer is always the user's own PUPS server, so a feed can't steer tokens anywhere.
+- **`realm`** may name the feed. Like all text from the server, the reader shows it only as the server's words, never as its own.
+- **The body.** A `401` or `403` may explain itself as `application/problem+json` ([RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)), e.g. "Ask the admin of comments.example.org to add you". Readers without support for this RFC at least have something to show.
+
+After the reader sent a token, the server answers:
+
+| Response | Meaning | The reader |
+| --- | --- | --- |
+| `200` | The domain may read the feed. | Subscribes, and shows the handle with the subscription. |
+| `403` | The token is valid, but the domain may not read the feed, e.g. because it isn't on the list of moderators. | Tells the user that @tim.example.com has no access, with the body's `detail` if there is one, and doesn't subscribe. |
+| `401` with `WWW-Authenticate: Bearer error="invalid_token"` | The token was rejected, e.g. because the read token expired. | Tries once more with a new token, then shows an error. |
+
+A server never answers `403` to a fetch without a token: it doesn't know who asks yet. A subscribed feed that starts answering `403`, e.g. because a moderator was removed, stays subscribed, and the reader shows that access was lost.
+
 ### Subscribing as the user
 
 A reader fetches a feed with identity tokens only if the user chose to subscribe to it as themselves:
 
-- **The user decides.** When the user subscribes, the reader offers *Subscribe as @tim.example.com*. Afterwards it shows the handle with the feed, e.g. next to its title or in its settings, and lets the user change the subscription to an anonymous one at any time. Nothing in a feed or a response can turn a subscription into one with identity.
-- **The 401 hint.** A feed that exists only in a personal version answers fetches without a token with `401` and `WWW-Authenticate: Bearer`. A reader that supports this RFC then offers to subscribe as the user, and subscribes only if the user agrees.
-- **A new token for every fetch.** For each fetch of the feed, the reader gets a new identity token for the origin of the feed URL and sends it with that request. It sends it with nothing else: not with the items' links, images or attachments, and not with other feeds on the same origin, unless the user subscribed to them as themselves too. If the request is redirected to another origin, the token isn't sent there.
+- **The user decides.** When the user subscribes to a feed that is announced as `restricted`, `personal` or `optional`, or that answered with an `identity` challenge, the reader offers *Subscribe as @tim.example.com*. Afterwards it shows the handle with the feed, e.g. next to its title or in its settings, and lets the user change the subscription to an anonymous one at any time (for `restricted` and `personal` feeds, that means unsubscribing). Nothing in a feed, a link or a response can turn a subscription into one with identity.
+- **No probing.** A challenge leads to an offer, never to a token on its own, also for feeds the user subscribed to anonymously before.
+- **A read token for the fetches.** The reader gets a [read token](#read-tokens) for the origin of the feed URL, and sends it with each fetch of the feed until shortly before it expires; then, or after a `401`, it gets a new one. It sends it with nothing else: not with the items' links, images or attachments, and not with other feeds on the same origin, unless the user subscribed to them as themselves too. If the request is redirected to another origin, the token isn't sent there.
 - **Actions stay separate.** Subscribing as the user doesn't make the feed's actions send identity tokens. Only controls with `identity` do that, as described in [Feed Actions](#feed-actions).
-
-How a reader learns that a feed has an optional personal version, such as the poll above, is open (see [Open questions](#open-questions)). Until then, publishers say so in the feed's `description` or on their web page.
 
 ### On the server
 
 - **Check every fetch.** The server checks the token as described in [Checking a token](#checking-a-token), with the feed's origin as audience.
 - **No shared caching.** A personal feed is served with `Cache-Control: private` (or `no-store`) and `Vary: Authorization`, so that no cache between the server and the reader serves one user's feed to another.
-- **Status codes.** `401` with `WWW-Authenticate: Bearer` for a feed that needs a token and got none, or got an invalid one. `403` for a domain that has no access to the feed, e.g. to a private group it doesn't belong to.
+- **Status codes and challenges** as in [The server's challenge](#the-servers-challenge). `restricted` and `personal` feeds answer `401` with `identity="required"` without a token; `optional` feeds answer `200` with `identity="optional"`.
 - **The same feed.** `feed_url` is the same for everyone. Item `id`s stay stable for each subscriber, so readers can keep track of what was read.
-- **Polling.** Readers poll feeds, and each fetch costs the reader a token exchange. Servers should support conditional requests (`ETag`, `If-None-Match`), computed per subscriber, and readers should not poll personal feeds more often than other feeds.
+- **Polling.** Readers poll personal feeds with read tokens, so the PUPS server sees about one exchange per origin and day. Servers should support conditional requests (`ETag`, `If-None-Match`), computed per subscriber, and readers should not poll personal feeds more often than other feeds.
+- **Both kinds of token.** A personal feed accepts read tokens and tokens for actions alike. An action in the feed, e.g. a moderator's *Accept*, gets a read token rejected with `insufficient_scope`.
 
 ## Security considerations
 
@@ -411,10 +501,11 @@ How a reader learns that a feed has an optional personal version, such as the po
 
 | Attacker | Wants to | Main defences |
 | --- | --- | --- |
-| A malicious server that receives a token | Use it on another server, or later | `aud` is one origin, lifetime at most five minutes, optional `jti` replay check |
-| Someone who copies a token from a log or proxy | Act as the user | Same as above; the token is good for one request at one server |
+| A malicious server that receives a token | Use it on another server, or later | `aud` is one origin, lifetime at most five minutes, optional `jti` replay check; read tokens live up to 24 hours but only read, at the server that has the feed anyway |
+| Someone who copies a token from a log or proxy | Act as the user | Same as above; the token is good for one request at one server, a read token for reading there for up to 24 hours |
 | A malicious feed | Make the reader reveal the user's identity, or act as the user | Nothing without a click; the handle and the host are shown before the click; `aud` taken from the URL; only the user can subscribe as themselves |
 | A cache between server and reader | Serve one user's personal feed to another | `Cache-Control: private` and `Vary: Authorization` on personal feeds |
+| A feed, link or response that claims to need identity | Learn who reads it | An `access` property or a challenge only leads to an offer; the user decides, and the token's audience comes from the feed URL |
 | A malicious or compromised app with the scope | Act as the user anywhere | Step-up consent, rate limits, log on the apps page, revocation, `client_id` in every token |
 | An app with only write scopes | Publish its own key or issuer | Configuration document, JWK Set and the PUPS link in `host-meta.json` are not writable through PUPS |
 | Someone who wants to forge tokens | Sign in as someone else | Signature with the PUPS server's key; the issuer is found from the domain in `sub` |
@@ -425,7 +516,8 @@ How a reader learns that a feed has an optional personal version, such as the po
 
 - **Audience.** A token is valid at one origin. Servers compare `aud` with their configured origin, exactly. Several services on one origin share tokens; services that must not, use separate origins.
 - **Lifetime.** At most five minutes, recommended 60 seconds. Revocation needs no list: when the grant is revoked, the app gets no new tokens.
-- **Bearer.** Whoever holds a token can use it at its server until it expires. A server that keeps `jti`s makes it good for one request. Binding tokens to a request is an open question.
+- **Read tokens.** Up to 24 hours, so revoking an app stops its reading only after up to a day. That is the price of not asking the PUPS server for every poll. Read tokens can't act, and a server never accepts one for a request that changes something.
+- **Bearer.** Whoever holds a token can use it at its server until it expires. A server that keeps `jti`s makes a token for an action good for one request. Binding tokens to a request is an open question.
 - **Algorithms.** `RS256` only. Servers never take the algorithm from anywhere but their own rules, never accept `none`, and never use a key from the token itself (`jwk`, `jku` or `x5u` headers are ignored).
 - **No confusion with PUPS access tokens.** Identity tokens are never accepted by the PUPS upload API, and PUPS access tokens are never sent to other servers. PUPS access tokens are opaque, identity tokens are JWTs with another server as audience.
 
@@ -463,9 +555,10 @@ Domains are cheap, and subdomains are free for whoever has one domain. A poll wi
 
 - The configuration document has `jwks_uri` and `identity-tokens` in `scopes_supported`; the JWK Set is served with CORS and a `max-age` of at most 3600; neither is writable through the upload API, `post_endpoint` or the host-meta endpoint.
 - Consent for `identity-tokens` shows its own group and needs step-up confirmation; it is never skipped.
-- Token exchange with a valid access token of a grant with the scope returns a token whose header and claims match [The token](#the-token), signed by a key in the JWK Set.
-- Rejected: an access token without the scope (`invalid_scope`), a revoked or expired one (`invalid_grant`), a `client_id` other than the grant's, an audience with a path, `/`, query, user info, fragment, `http`, IP address, `localhost` or several values (`invalid_target`), a `resource` or `actor_token` (`invalid_request`).
-- Issued tokens appear in the log on the apps page; after revocation, no more tokens are issued.
+- Token exchange with a valid access token of a grant with the scope returns a token whose header and claims match [The token](#the-token), signed by a key in the JWK Set, with a lifetime of at most 300 seconds; with `scope=read`, a read token with `"scope": "read"` and a lifetime of at most 86,400 seconds, and `scope` in the answer.
+- Rejected: an access token without the scope (`invalid_scope`), a revoked or expired one (`invalid_grant`), a `client_id` other than the grant's, an audience with a path, `/`, query, user info, fragment, `http`, IP address, `localhost` or several values (`invalid_target`), a `resource` or `actor_token` (`invalid_request`), a `scope` other than `read` (`invalid_scope`).
+- Issued tokens appear in the log on the apps page, read tokens marked as such; after revocation, no more tokens are issued.
+- An old key stays in the JWK Set until the last token signed with it has expired, read tokens included.
 
 **Readers**
 
@@ -473,20 +566,25 @@ Domains are cheap, and subdomains are free for whoever has one domain. A poll wi
 - A token is requested only on a click, with the origin of the expanded action URL as `audience`, and sent only in that request.
 - Without a grant, clicking starts sign-in, and the action is not sent afterwards without a new click.
 - The `actions` fallback of an item with `identity` controls is removed.
-- Feeds are fetched with a token only after the user subscribed as themselves; the handle is shown with the subscription; a `401` with `WWW-Authenticate: Bearer` leads to an offer, never to a token on its own; the token is sent with the feed's fetches only, not with its links, images, attachments or redirects to other origins.
+- Feeds are fetched with a token only after the user subscribed as themselves; the handle is shown with the subscription; an `access` link property or a challenge with `identity` leads to an offer, never to a token on its own; the token is sent with the feed's fetches only, not with its links, images, attachments or redirects to other origins.
+- Feed fetches use a read token for the origin, reused until shortly before it expires and renewed after a `401`; read tokens are never sent with actions or other requests.
+- After a token: `200` subscribes, `403` tells the user that the domain has no access and doesn't subscribe, `401` with `invalid_token` is retried once with a new token.
+- Pages that render a domain for visitors leave out feed links whose `access` is `restricted`, `personal` or unknown.
 
 **Servers**
 
-- Tokens are rejected for: a wrong `aud`, an array `aud`, an expired token, a lifetime over 300 seconds, an `alg` other than `RS256`, a `sub` that isn't a canonical identity URL, an `iss` other than the one the domain's `host-meta.json` leads to, a `kid` not in the JWK Set, a bad signature.
+- Tokens are rejected for: a wrong `aud`, an array `aud`, an expired token, a lifetime over 300 seconds without `scope` or over 86,400 seconds with `scope` `read`, any other `scope`, an `alg` other than `RS256`, a `sub` that isn't a canonical identity URL, an `iss` other than the one the domain's `host-meta.json` leads to, a `kid` not in the JWK Set, a bad signature.
+- A read token gets `403` with `insufficient_scope` for any request other than a `GET` or `HEAD` of a feed, and is not rejected for being used more than once.
 - No fetch happens for a token that fails steps 1 to 4.
 - Discovery fetches respect the fetch rules, including private addresses after DNS resolution.
 - Personal feeds carry `Cache-Control: private` or `no-store` and `Vary: Authorization`.
+- `restricted` and `personal` feeds answer a fetch without a token with `401` and `WWW-Authenticate: Bearer identity="required"`, never with `403`; `optional` feeds answer it with `200` and `identity="optional"`; a valid token of a domain without access gets `403`.
 
 ## Open questions
 
-- **Discovering personal feeds.** How does a reader learn that a public feed also has a personal version, so that it can offer to subscribe as the user? A property in the feed, a link attribute, a header in the feed's response?
+- **Asking for access.** A domain that gets `403` for a `restricted` feed can only ask the admin by other means. Should the feed name a way to ask, e.g. an RFC-4 submission endpoint for requests?
 - **Binding tokens to a request.** Should a token name the method and URL it is for, like AT Protocol's `lxm`, or be sender-constrained with [DPoP](https://www.rfc-editor.org/rfc/rfc9449)?
 - **Optional identity.** Controls that the user may use either anonymously or as themselves, e.g. a poll that accepts both and counts them separately.
 - **Owner policies.** Should owners be able to say "ask me every time" for an app, or allow it only certain audiences, and how would the app learn that?
 - **RSS.** If Feed Actions are ported to RSS, `identity` goes with them.
-- **Names.** The scope `identity-tokens` and the field `identity` are proposals.
+- **Names.** The scope `identity-tokens`, the field `identity` and the token scope `read` are proposals.

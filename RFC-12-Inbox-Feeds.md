@@ -194,6 +194,8 @@ Readers ignore fields they don't know and values of the wrong type. Items with a
 
 **`moderation`.** One item per pending submission. `target` names the post, comment or group it was submitted to, so that the reader can show what it answers. The `submission` items are **the complete queue**: every pending submission is in the inbox, and nothing else. When a submission is approved or rejected, through the inbox or any other way, the writer removes it. A reader therefore removes submissions from its view that are no longer in the file.
 
+**Published without review.** An RFC-4 server that publishes a submission without the owner's decision, e.g. after automatic moderation, may tell the owner with a `reply` item in `mentions`, with the `source` and `target` of the submission. It needs no decision, so it is not part of the queue, and readers don't count it as such. It may carry actions, e.g. to reject the submission after all, which removes it from the site again.
+
 **More categories.** Writers may define further categories and item types, named with a URI if they are not defined by an RFC. Readers show items of unknown categories in a general section of the inbox, or not at all.
 
 ### Actions
@@ -201,6 +203,7 @@ Readers ignore fields they don't know and values of the wrong type. Items with a
 Items, and the feed, may carry [Feed Actions (RFC-9)](https://github.com/bigwide-net/RFCs/blob/main/RFC-9-Feed-Actions.md). Typical ones:
 
 - On a `submission`: approve, reject, reject with a reason, approve and close the thread.
+- On a `reply` that was published without review: reject, which removes it from the site again.
 - On any item: block the author, report spam, remove the item from the inbox.
 - On the feed: pause submissions, mark all as seen.
 
@@ -367,7 +370,7 @@ The reader shows Tim *To approve (1)*: Carol's comment on his post `p-12`, with 
 - Write only an inbox that they created or whose `_inbox.writer` names them, with `If-None-Match: *` or `If-Match`.
 - Write `_inbox.writer` and `_inbox.categories` on the feed, and `_inbox.type`, `source` and `target` on every item, with stable `id`s.
 - Keep the `submission` items complete; remove items once a submission is decided or a mention withdrawn; keep the file small.
-- Point actions to themselves, authorized by capability URLs or RFC-10 identity.
+- Point actions to themselves, authorized by capability URLs or RFC-10 identity. Never pass on the actions of a received post, its `_actions` or its [RFC-9](https://github.com/bigwide-net/RFCs/blob/main/RFC-9-Feed-Actions.md) fallback HTML (`class="without-extension-actions"`): in the inbox, the reader can't tell them from the writer's own.
 
 **Readers**
 

@@ -39,7 +39,7 @@ In short:
 
 - **RSS and Atom.** Producing two formats from one set of posts, and keeping them in sync, is the job of a CMS. JSON Feed is easy to produce, easy to parse, and supports everything the bigwide.net extensions need.
 - **HTML.** No app writes web pages; PUPS doesn't allow it. See [Rendering](#rendering).
-- **Real-time notifications.** PUPS servers don't support [WebSub](https://www.w3.org/TR/websub/) yet, so feeds have no `hubs`.
+- **Pushing content.** The server's [WebSub](https://www.w3.org/TR/websub/) hub only tells subscribers that a feed changed; they fetch it themselves (see [Real-time updates](#real-time-updates-websub)).
 - **App-private feeds.** A feed that an app keeps in its own directory, `/appdata/<client-host>/`, has only one writer, and the app may organize it differently. The exception is the author feeds of RFC-4 comments, which follow [Comment feeds](#comment-feeds-rfc-4). These are ordinary files; the server doesn't keep them.
 
 ## Roles
@@ -129,7 +129,7 @@ Some top-level fields are set by the server. All others belong to the owner, who
 | `next_url` | Not set in a feed with archives; readers follow `_archive.archive_url`, see [Reading](#reading) | server |
 | `icon`, `favicon` | Images in `/feed/images/icons/`, or `/feed/<name>/images/icons/` for a named feed, see [Icons](#icons) | owner |
 | `authors`, `language`, `expired` | As in JSON Feed | owner |
-| `hubs` | **Never set.** PUPS servers don't support WebSub yet. | — |
+| `hubs` | The server's WebSub hub, while it is on: `[{ "type": "WebSub", "url": "https://tim.example.com/pups/websub" }]`. See [Real-time updates](#real-time-updates-websub). | server |
 | `items` | The newest 30 items, newest first | server |
 | `_pups` | The marker, see [The `_pups` object](#the-_pups-object) | owner |
 | `_archive` | RFC-13: the newest archive, the archive template and size. See [Archives](#archives). | server |
@@ -138,7 +138,7 @@ Some top-level fields are set by the server. All others belong to the owner, who
 - **The home page is the domain.** A feed belongs to the domain, not to an app, so `home_page_url` is always the domain's root, never the app's website. What the domain shows there is up to the owner (see [Rendering](#rendering)).
 - **The server sets its fields** whenever it writes the feed file, whatever an app sent for them. A JSON Feed 1.0 file is upgraded to 1.1 (`author` becomes `authors`).
 - **Unknown fields are kept.** An app changes only the fields it means to change and writes everything else back unchanged, including fields and extensions it doesn't know. [RFC-6](https://github.com/bigwide-net/RFCs/blob/main/RFC-6-Personal-Upload-Server.md#well-known-paths) requires this for all shared well-known files, and it is what allows several apps to share a feed. The server keeps them too, in the feed file and in every item.
-- **No `hubs`.** A `hubs` entry without a server that notifies the hub would make readers wait for updates that never come. Apps don't add it, and remove it when the owner asks.
+- **`hubs` is the server's.** A hub that nobody notifies would make readers wait for updates that never come, so only the server, which writes every kept feed, names one: its own, while the owner has it on. Apps never write `hubs`; the server replaces whatever they send.
 
 ### The `_pups` object
 
@@ -198,14 +198,15 @@ It then writes the feed file with these fields, `_pups` and an empty `items` arr
 PUPS has no directory listing, so there is no other way to learn which feeds a domain has. Every feed should therefore be registered in the domain's `host-meta.json`, with the link relation `https://bigwide.net/ns/feed`, through PUPS's [host-meta endpoint](https://github.com/bigwide-net/RFCs/blob/main/RFC-6-Personal-Upload-Server.md#editing-host-metajson):
 
 ```json
-{ "action": "add", "rel": "https://bigwide.net/ns/feed", "href": "https://tim.example.com/feed/photos.json", "type": "application/feed+json" }
+{ "action": "add", "rel": "https://bigwide.net/ns/feed", "href": "https://tim.example.com/feed/photos.json", "type": "application/feed+json", "titles": { "default": "Photos" } }
 ```
 
 - **When.** The app that creates a feed registers it right afterwards. This includes the main feed, although readers also find it at `/feed.json` without discovery.
 - **No duplicates.** Before it registers a feed, the app reads `host-meta.json` and skips the request if a link with this relation and `href` exists already, e.g. because the owner added it by hand.
+- **Titles.** The app should give the link the feed's `title` as `titles` (`{ "default": <title> }`), and register the link again when the title changes, so that apps and readers can list a domain's feeds without fetching each one.
 - **Only feed files.** `href` is always a feed file, `/feed.json` or `/feed/<name>.json`, never an archive or another file in a feed directory.
 - **Without the endpoint.** If the configuration document has no `host_meta_endpoint`, the app tells the owner which link to add to `host-meta.json` by hand.
-- **Finding feeds.** An app that wants to post to one of the owner's existing feeds reads the links with this relation from `host-meta.json`, fetches each feed for its title, and lets the owner choose. It still checks `_pups.pupsControlled` before writing.
+- **Finding feeds.** An app that wants to post to one of the owner's existing feeds reads the links with this relation from `host-meta.json`, takes each feed's title from the link (or fetches the feed if the link has none), and lets the owner choose. It still checks `_pups.pupsControlled` before writing.
 
 `host-meta.json` then looks like this, with the ownership property that PUPS adds to every link it writes:
 
@@ -219,11 +220,14 @@ PUPS has no directory listing, so there is no other way to learn which feeds a d
     },
     {
       "rel": "https://bigwide.net/ns/feed", "type": "application/feed+json", "href": "https://tim.example.com/feed/photos.json",
+      "titles": { "default": "Photos" },
       "properties": { "https://bigwide.net/ns/pups#client": "https://photos.example/oauth/client.json" }
     }
   ]
 }
 ```
+
+**Feeds that need an identity.** The owner may also list feeds on other servers that only some domains, or each domain in its own version, can read, e.g. the moderation queue of the site's comments. Their links carry the property `https://bigwide.net/ns/access` (`restricted`, `personal` or `optional`) of [Identity Tokens (RFC-10)](https://github.com/bigwide-net/RFCs/blob/main/RFC-10-Identity-Tokens.md#announcing-a-feed). Readers offer to subscribe to them as the user; pages that render the domain for visitors leave out `restricted` and `personal` feeds. Feeds on PUPS are public, so apps never set the property.
 
 When the owner revokes an app's grant, its feed links stay and become the owner's, as RFC-6 specifies for well-known paths. The relation `https://bigwide.net/ns/feed` is a placeholder until it has a permanent home.
 
@@ -352,6 +356,19 @@ A reader subscribes to the feed file and polls it, as any JSON Feed. It contains
 
 Readers find the main feed at `https://<owner host>/feed.json` without any discovery, and all feeds of a domain in `host-meta.json`. A website or profile that wants to point to a feed links to its feed file.
 
+## Real-time updates (WebSub)
+
+Readers that don't want to poll can subscribe to a kept feed at the server's [WebSub](https://www.w3.org/TR/websub/) hub. The server writes every kept feed, so it knows when one changes, and is the hub itself. It is a minimal hub:
+
+- **Topics** are the feed files of kept feeds, by their public URL (`feed_url`). Archives and comment feeds are no topics: readers subscribe to the feed file, and read archives and comment feeds when they need them.
+- **Discovery.** While the hub is on, the server writes `hubs` into the feed file (`[{ "type": "WebSub", "url": "<base>/pups/websub" }]`) and serves it with `Link: <hub>; rel="hub", <feed_url>; rel="self"`. Archives inherit neither (RFC-13 leaves `hubs` out of archives). When the owner turns the hub off, the server writes the feed files again without `hubs`, and drops the header.
+- **Subscribing** follows WebSub: a form-encoded `POST` to the hub with `hub.mode` (`subscribe` or `unsubscribe`), `hub.topic`, `hub.callback`, and optionally `hub.lease_seconds` and `hub.secret`. The hub answers `202` and verifies the intent with a `GET` of the callback, which must echo `hub.challenge`; only then does the subscription count. Leases are between one hour and ten days, ten days without `hub.lease_seconds`. Callbacks must be `http` or `https` URLs on public addresses, not on the owner's host.
+- **Notifying.** After an app changed a feed (a `PUT` or `POST` that changed it), the server sends each subscriber an empty `POST` with the `Link` header, and with `X-Hub-Signature: sha256=…` (the HMAC of the empty body) if it gave a secret. It doesn't send the feed: subscribers fetch it, as they would after polling. Changes of the comment counts alone notify nobody. A subscriber that answers `410` is unsubscribed; other errors change nothing, and the next change tries again.
+- **Limits.** The owner sets how many subscriptions the hub takes over all feeds (default 1000, at most 10,000); beyond that, the hub answers `403` (`subscriber_limit`), and the reader polls as before. Each callback host may have at most five subscriptions per feed (`403`, `too_many_subscriptions`). Callbacks on domains the owner trusts, by default those of well-known cloud feed readers, are accepted beyond the limit. The hub recognizes them by the callback's domain: unlike a `User-Agent` or an IP address, it can't be faked, since the subscription only counts once the callback has echoed the challenge.
+- **Off.** While the hub is off, it answers `404`, and no subscriber is notified. Subscriptions run out with their leases.
+
+Servers with tight limits on the requests they may make send the notifications in batches, across several runs. A subscriber may hear of a change some seconds or minutes late; it never hears of one that didn't happen.
+
 ## Rendering
 
 This document doesn't say how a feed becomes a web page, and the server never produces HTML from a feed. Possible ways:
@@ -378,7 +395,7 @@ Comments, and posts to discussion groups, are [RFC-4](https://github.com/bigwide
   A comment on `https://rm.example.org/groups/twowaves/posts.json#a8Kd03XpQz` published at `2026-11-04T10:20:00Z` hashes `rm.example.org 2026110410` to `8ec59ab09c61ab7b`, and goes to `/appdata/app.example/comments/b7b/8ec59ab09c61ab7b.json`.
 - **Why this layout.** Each file holds the comments on one site within one hour, so it stays small: it needs no archives, read-modify-write is cheap, and the RFC-4 server fetches it quickly. The path follows from the comment itself, so every device of the owner, and every version of the app, finds the file of a comment from its target and `date_published`, without having to remember it. The hash keeps the names short and free of special characters.
 - **The file** is a JSON Feed 1.1 with a `title` (e.g. "Comments by tim.example.com"), `home_page_url` (the owner's domain, `https://<me host>/`), `feed_url` (its own public URL) and the owner's socialspec account in `_source.accounts` (`@<me host>`), so that targets with RFC-4's `requireSocialSpec` accept it. It has no `_pups` and is not registered in `host-meta.json`: it is not a feed for readers.
-- **Posting.** The app creates the item with a new `id` (16 random URL-safe characters), `_source.inReplyTo` set to the target, `date_published` set to now, and content within the target's policy. It finds the comment feed for it (with the recommended layout, from the target and `date_published`), reads the file with a [fresh read](https://github.com/bigwide-net/RFCs/blob/main/RFC-6-Personal-Upload-Server.md#fresh-reads), adds the item at the top of `items`, and writes it with `If-Match`; if the file doesn't exist, it creates it with `If-None-Match: *`. On `412`, it starts again.
+- **Posting.** The app creates the item with a new `id` (16 random URL-safe characters), `_source.inReplyTo` set to the target with the target feed's URL and a title (`{ "value": <target>, "feedUrl": <target without #id>, "feedTitle": <title> }`, [RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md)): the feed's title for a post, the comment's title for a comment, and no `feedTitle` for a comment without one, `date_published` set to now, and content within the target's policy. It finds the comment feed for it (with the recommended layout, from the target and `date_published`), reads the file with a [fresh read](https://github.com/bigwide-net/RFCs/blob/main/RFC-6-Personal-Upload-Server.md#fresh-reads), adds the item at the top of `items`, and writes it with `If-Match`; if the file doesn't exist, it creates it with `If-None-Match: *`. On `412`, it starts again.
 - **Submitting.** `source` is the file's public URL plus `#<id>`, e.g. `https://bob.example.net/appdata/app.example/comments/b7b/8ec59ab09c61ab7b.json#c-Lq7Wm2xP9dRt4yZa`. The app sends the webmention once the item is visible at that URL, so that the server doesn't fetch an older copy from a cache. It sends no [RFC-11](https://github.com/bigwide-net/RFCs/blob/main/RFC-11-Mentions.md) mentions for the item; the RFC-4 server does that when it republishes it.
 - **Reply mentions.** The RFC-4 server tells the author about replies to their comment, with RFC-11 reply mentions to their domain. If the author doesn't want that for a comment, the app writes RFC-4's `_commenting: { "notifyReplies": false }` on the item. To change it later, it changes the flag and resends the webmention; RFC-4 servers accept that even when the target allows no edits.
 - **Editing and deleting.** The app changes the item in its file, keeping `id` and `date_published` and setting `date_modified`, or removes it, and resends the webmention with the same `source`. It deletes a file whose last item it removed; RFC-4 servers treat the `404` as a delete.
@@ -393,6 +410,7 @@ A feed can also be the target of RFC-4 comments: readers comment on its posts, a
 - **Only the feed file.** Archives are created with a copy of the feed file's fields, so a copy of `_submissions` would keep saying what was true when the archive was created. The server therefore leaves `_submissions` out of new archives (see [Archives](#archives)), and the feed file alone says whether the feed accepts comments, for all its items.
 - **Readers** take `_submissions` from the feed file. A reader that shows an item from an archive finds the feed file at the archive's `_archive.updates_url`. The `target` of a comment is the feed file's URL plus `#<id>`; RFC-4 also allows the archive's URL plus `#<id>`.
 - **Receivers** that get a comment whose target is an archive (it has `_archive.updates_url`) use the `_submissions` of the feed file at `updates_url`, if it is on the same host, and ignore any in the archive. Items that are no longer in the feed file are found in the archives, from `_archive.archive_url` (or `next_url`) on.
+- **Comment feeds** don't carry `_submissions` either. A receiver that needs to know whether a comment feed belongs to a feed that accepts submissions, e.g. to verify a reply to a comment republished for its owner ([RFC-11 "Verifying a reply"](https://github.com/bigwide-net/RFCs/blob/main/RFC-11-Mentions.md)), follows the comment feed's `_pups.inReplyTo` on the same host: it names a post in the feed file or an archive, or a comment in the comment feed one level up. From an archive it continues at `updates_url`, and uses the `_submissions` of the feed file it reaches.
 - **Single items** are closed with RFC-4's `_commenting: { "allowComments": false }`. A post with `_commenting: { "notifyReplies": false }` gets no reply mentions for the comments on it (RFC-11 "Opting out").
 - **Discovery.** RFC-4 also announces the endpoint with an HTTP `Link` header with `rel="webmention"` where the server can send one. Feed files are static files, so their `_submissions.url` is usually the only announcement; servers that serve them with that header may add it.
 
@@ -406,7 +424,7 @@ When a kept feed's `_submissions` names the PUPS server's `comment_endpoint` wit
 
 - `title` is "Comments on “<post title>”", or for replies "Replies to a comment by <author> on “<post title>”"; `home_page_url` is the `url` of the comment (or post) it answers, or the domain's root; `feed_url` is its own URL.
 - `_pups.inReplyTo` is the address of the post or comment whose replies it holds. It ties the thread together: from any comment feed, the server finds the comment feeds above it, up to the post's.
-- Each item is the comment as RFC-4 "What is republished" describes: its `id` is the guid from the submission, then `url` (the comment's link), `title`, `content_html` (the comment's Comment HTML, checked against the features of the feed's `comments` policy and normalized as [RFC-5](https://github.com/bigwide-net/RFCs/blob/main/RFC-5-Comment-HTML.md) describes), `authors`, `date_published`, and `_source` with `inReplyTo` (the post or comment it answers), the verified `accounts.socialspec`, `markdown` (the comment's Markdown, unchanged, if it was written in Markdown), and `comments` (see Counts). A comment whose author opted out of reply mentions has `_commenting: { "notifyReplies": false }`.
+- Each item is the comment as RFC-4 "What is republished" describes: its `id` is the guid from the submission, then `url` (the comment's link), `title`, `content_html` (the comment's Comment HTML, checked against the features of the feed's `comments` policy and normalized as [RFC-5](https://github.com/bigwide-net/RFCs/blob/main/RFC-5-Comment-HTML.md) describes), `authors`, `date_published`, and `_source` with `inReplyTo` (the post or comment it answers, the target of the submission, in RFC-1's object form with `feedUrl` and `feedTitle`: the post's feed and its title, or the comment feed that holds the answered comment and that comment's title, left out if it has none), the verified `accounts.socialspec`, `markdown` (the comment's Markdown, unchanged, if it was written in Markdown), and `comments` (see Counts). A comment whose author opted out of reply mentions has `_commenting: { "notifyReplies": false }`.
 - **`summary`.** Instead of `content_html`, the item has an abstract as `content_text`: the comment's plain text, without any markup, cut off after 150 characters (the last one an ellipsis `…`). Its `url` links to the full text, so the server refuses comments without one (`link-missing`).
 - **Which mode.** A comment is published as its author agreed when submitting it, and never more fully: if the feed changed to `summary` since, it is published as an abstract; if the feed no longer publishes comments, *Publish Comment* fails.
 - An item's address is the comment feed's URL plus `#<id>`. A reply to a comment uses that address as its `target` and `inReplyTo`, e.g. `https://alice.example/feed/comments/47.json#s-m8NdnkLz7ri4Aws9`; the server applies the policy of the post's feed, and refuses replies to comments it hasn't published (`target-gone`).
@@ -467,7 +485,7 @@ When a kept feed's `_submissions` names the PUPS server's `comment_endpoint` wit
       "date_published": "2026-11-15T10:03:00Z",
       "_source": {
         "about": "https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md",
-        "inReplyTo": "https://alice.example.com/feed.xml#post-42",
+        "inReplyTo": { "value": "https://alice.example.com/feed.xml#post-42", "feedUrl": "https://alice.example.com/feed.xml", "feedTitle": "Alice's blog" },
         "markdown": "Agreed, archives don't need a CMS."
       },
       "_archive": { "index": 41 }
@@ -527,8 +545,7 @@ A named feed `photos` looks the same, with `"feed_url": "https://tim.example.com
 
 ## Open questions
 
-- **WebSub.** Since the server writes every kept feed, it knows when one changes: a later version could notify a hub, or be one, and `hubs` would become a field the server sets. Not yet.
-- **Feed titles in `host-meta.json`.** An app that lists the owner's feeds has to fetch each one to show its title. Should the host-meta endpoint accept a `titles` object for links, as the JSON form of host-meta allows?
+- **WebSub content.** The hub sends no content (see [Real-time updates](#real-time-updates-websub)). WebSub expects the new content in the notification, and subscribers that rely on it may ignore an empty one. Should the hub send the feed file after all, or a diff of the new items?
 - **Long comment feeds.** A post with hundreds of comments may need its comment feed split into RFC-13 archives.
 - **Removing published comments.** So far a comment leaves its comment feed only when its author deletes it. The owner will need a way to take one down, e.g. an action in a feed of the published comments.
 - **Names and URIs.** The link relation `https://bigwide.net/ns/feed` is a placeholder, like the URIs of RFC-6, to be published on bigwide.net.

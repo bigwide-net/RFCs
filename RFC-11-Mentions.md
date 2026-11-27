@@ -114,7 +114,7 @@ Every handle in the post's text is an account to notify, with the target `https:
 
 ### Replies
 
-A post replies to an item when it has `inReplyTo` (`<source:inReplyTo>` in RSS, `_source.inReplyTo` in JSON Feed). Its value is the feed URL of the answered item plus `#` and the item's id, as in RFC-4. The sender notifies the author of that item, with the `inReplyTo` value as the target.
+A post replies to an item when it has `inReplyTo` (`<source:inReplyTo>` in RSS, `_source.inReplyTo` in JSON Feed). Its value (in JSON Feed the string, or `value` of [RFC-1](https://github.com/bigwide-net/RFCs/blob/main/RFC-1-Source-for-JSON-Feeds.md)'s object form with `feedUrl` and `feedTitle`) is the feed URL of the answered item plus `#` and the item's id, as in RFC-4. The sender notifies the author of that item, with the `inReplyTo` value as the target.
 
 The author is the item's socialspec account (`<source:account service="socialspec">`, `_source.accounts.socialspec`):
 
@@ -210,16 +210,17 @@ This way the owner gets exactly one notification, and only for what readers can 
 
 - **After publishing.** The sender sends the mentions as soon as the post can be fetched at `source`. If the post is served through a cache or a CDN, it waits until the new version is visible, or the receiver won't find the item or the handle.
 - **Asynchronously.** Sending must not delay publishing, and a failed mention doesn't fail the post.
-- **Retries.** After a network error, a `5xx` or a `429`, the sender retries with a growing interval (respecting `Retry-After`) for up to a day. It doesn't retry other `4xx` answers.
+- **Retries are optional.** A sender may send each mention only once, and give up when it fails. A sender that retries does so only after a network error, a `5xx` or a `429`, with a growing interval (respecting `Retry-After`), for at most a day. It doesn't retry other `4xx` answers. Retries make delivery more reliable, but a sender that retries for anyone who publishes through it can be misused to send repeated requests to a host.
 
 ### Edits and deletes
 
-As in the [Webmention spec](https://www.w3.org/TR/webmention/#sending-webmentions-for-updated-posts):
+Sending mentions again after an edit or a delete is optional. Unlike the [Webmention spec](https://www.w3.org/TR/webmention/#sending-webmentions-for-updated-posts), RFC-11 accepts that mentions go stale: an inbox may show an old version of a post, or a post that no longer exists.
 
-- **Edits.** When a post changes, the sender sends the mention again to every account that the old or the new version mentions. The receiver then adds, updates or removes the mention.
-- **Deletes.** When a post is deleted, the sender sends the mention again to every account it mentioned. The source then answers `404` or `410`, or the feed no longer contains the item, and the receiver removes the mention.
+- **Edits.** When a post changes, the sender should notify the accounts that the new version mentions and that the old one didn't. It may also send the mention again to accounts that it notified before, so that the receiver updates or removes the mention.
+- **Deletes.** When a post is deleted, the sender may send the mention again to every account it mentioned. The source then answers `404` or `410`, or the feed no longer contains the item, and the receiver removes the mention.
+- **Limits.** Edits must not be a way to notify more people, or the same people again and again. A sender may notify each account at most once per post, over all its versions, and the limit of about 20 accounts applies to all versions together.
 
-An RFC-4 server does the same when an allowed edit or delete changes a republished item, and when moderation removes it.
+The same applies to an RFC-4 server when an allowed edit or delete changes a republished item, and when moderation removes it.
 
 ## Receiving
 
@@ -249,10 +250,10 @@ The target is `https://<host>/`, and the post's text, found as in [Handles](#han
 
 The target is a feed URL + `#id`, and two things must hold:
 
-1. **The post answers the target.** In a feed item, `inReplyTo` equals the target. As in RFC-4, the RSS and JSON forms of the same feed count as the same target, and the fragment is compared after decoding. In an HTML page, the post contains a link to the target, or to the permalink of the target item (its `link` or `url`), preferably marked as `u-in-reply-to` or `rel="in-reply-to"`.
+1. **The post answers the target.** In a feed item, the value of `inReplyTo` equals the target. As in RFC-4, the RSS and JSON forms of the same feed count as the same target, and the fragment is compared after decoding. In an HTML page, the post contains a link to the target, or to the permalink of the target item (its `link` or `url`), preferably marked as `u-in-reply-to` or `rel="in-reply-to"`.
 2. **The target is the owner's item.** One of these:
    - **On the owner's domain.** The target feed is on the owner's host, or is a feed the receiver knows the owner publishes, e.g. because the receiver is part of the owner's blog engine. The item exists in it.
-   - **Republished for the owner.** The target feed announces RFC-4 `submissions`, and the item carries the owner's handle as its socialspec account. This is how replies to the owner's comments in groups and on other blogs arrive: those comments live in the server's comment feeds, not on the owner's domain. An RFC-4 server republishes an account only after checking that it belongs to the author feed's host. The receiver fetches the target feed to check this, or relies on a record of the owner's own submission, e.g. the `pubUrl` an RFC-4 status page returned.
+   - **Republished for the owner.** The target feed announces RFC-4 `submissions`, and the item carries the owner's handle as its socialspec account. This is how replies to the owner's comments in groups and on other blogs arrive: those comments live in the server's comment feeds, not on the owner's domain. An RFC-4 server republishes an account only after checking that it belongs to the author feed's host. The receiver fetches the target feed to check this (for a comment feed of a PUPS server, which carries no `submissions` itself, the feed file it belongs to, see [RFC-7 "Receiving comments"](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md#receiving-comments-rfc-4)), or relies on a record of the owner's own submission, e.g. the `pubUrl` an RFC-4 status page returned.
 
 ### Delivering
 
@@ -267,6 +268,8 @@ A valid mention goes into the owner's inbox, usually the inbox feed of [RFC-12](
 | Dates | The post's publication date, and when the mention arrived. |
 
 The receiver keeps one mention per source and target. A repeated webmention for the same pair updates it, or, if the post no longer verifies (the source answers `404` or `410`, the item is gone, the handle or the `inReplyTo` was removed), removes it. As in RFC-4, a receiver that gives up while following archive pages treats the item as not found, which removes nothing.
+
+Senders need not send again after edits and deletes, so a stored mention may be stale. That is acceptable. A receiver may check the source again, for example when the owner opens the mention, but doesn't have to.
 
 ## CORS
 
@@ -391,16 +394,17 @@ When Alice answers Bob, her client submits her comment to the group the same way
 - Find handles as in [Handles](#handles), and reply authors as in [Replies](#replies). Notify each account at most once per post, never the post's own author, and at most about 20 accounts per post.
 - Send no reply mention for an answered item with `notifyReplies: false` ([Opting out](#opting-out)). As an RFC-4 server, store and republish the flag of submitted items.
 - Discover endpoints through `host-meta.json` only, over HTTPS, with caching; send nothing to domains without the link.
-- Send `source` and `target` as defined, after the post is publicly visible, asynchronously, with retries for network errors, `5xx` and `429` only.
-- Resend after edits and deletes to every account mentioned before or after.
+- Send `source` and `target` as defined, after the post is publicly visible, asynchronously. Retries are optional; if any, only for network errors, `5xx` and `429`, for at most a day.
+- After an edit, should notify accounts that only the new version mentions. Sending again to accounts notified before, and after deletes, is optional. Edits never raise the limit of about 20 accounts per post.
 
 **Receivers**
 
 - Publish the endpoint in `host-meta.json` with the relation `https://bigwide.net/ns/mention`.
 - Accept form-encoded webmentions, answer `400` for invalid requests and `202` otherwise, and send `Access-Control-Allow-Origin: *`.
 - Verify asynchronously by fetching the source: the handle for mentions by name; `inReplyTo` equal to the target, and the target being the owner's item, for replies. Accept RSS 2.0 and JSON Feed sources, and should accept HTML.
-- Keep one mention per source and target; update or remove it when a repeated webmention shows a change, a `404`, a `410` or a missing item.
+- Keep one mention per source and target; update or remove it when a repeated webmention shows a change, a `404`, a `410` or a missing item. Accept that mentions may be stale.
 - Fetch with limits, refuse private addresses, and limit the rate per source host.
+- Show the post without its actions: leave out `_actions` and the [RFC-9](https://github.com/bigwide-net/RFCs/blob/main/RFC-9-Feed-Actions.md) fallback HTML (`class="without-extension-actions"`) from the content or excerpt. They belong to the system the post comes from.
 
 ## Open questions
 
