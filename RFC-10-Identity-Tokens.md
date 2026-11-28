@@ -466,6 +466,7 @@ Content-Type: application/problem+json
 - **How to authenticate.** The parameter means: send an identity token of this RFC, with the origin of the feed URL as `audience`, as `Authorization: Bearer`. The challenge names no audience and no issuer. The audience always comes from the URL, and the issuer is always the user's own PUPS server, so a feed can't steer tokens anywhere.
 - **`realm`** may name the feed. Like all text from the server, the reader shows it only as the server's words, never as its own.
 - **The body.** A `401` or `403` may explain itself as `application/problem+json` ([RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)), e.g. "Ask the admin of comments.example.org to add you". Readers without support for this RFC at least have something to show.
+- **Readers in a browser.** A web-based reader fetches the feed from another origin, so the server sends every response of the feed, `401` and `403` included, with CORS headers: `Access-Control-Allow-Origin` (`*` is fine, since readers send no cookies), `Authorization` in `Access-Control-Allow-Headers` of its preflight answers (the wildcard `*` doesn't cover it), and `Access-Control-Expose-Headers: WWW-Authenticate`. Without the last one, the browser hides the challenge from the reader, also on a `200`, and the reader can't tell that the feed takes a token. Servers that support conditional requests expose `ETag` too. A feed that uses identity tokens therefore **must** be CORS-enabled to be read from a browser: a web-based reader never fetches it through a CORS proxy or another intermediary, because the proxy would see the read token and could read the user's personal feed with it for up to 24 hours. Without these headers, browser-based readers can't subscribe to the feed at all.
 
 After the reader sent a token, the server answers:
 
@@ -568,6 +569,7 @@ Domains are cheap, and subdomains are free for whoever has one domain. A poll wi
 - The `actions` fallback of an item with `identity` controls is removed.
 - Feeds are fetched with a token only after the user subscribed as themselves; the handle is shown with the subscription; an `access` link property or a challenge with `identity` leads to an offer, never to a token on its own; the token is sent with the feed's fetches only, not with its links, images, attachments or redirects to other origins.
 - Feed fetches use a read token for the origin, reused until shortly before it expires and renewed after a `401`; read tokens are never sent with actions or other requests.
+- Readers in a browser fetch feeds with a token directly from the feed's server, never through a CORS proxy or another intermediary.
 - After a token: `200` subscribes, `403` tells the user that the domain has no access and doesn't subscribe, `401` with `invalid_token` is retried once with a new token.
 - Pages that render a domain for visitors leave out feed links whose `access` is `restricted`, `personal` or unknown.
 
@@ -578,6 +580,7 @@ Domains are cheap, and subdomains are free for whoever has one domain. A poll wi
 - No fetch happens for a token that fails steps 1 to 4.
 - Discovery fetches respect the fetch rules, including private addresses after DNS resolution.
 - Personal feeds carry `Cache-Control: private` or `no-store` and `Vary: Authorization`.
+- Feeds that use identity tokens answer with CORS headers that allow `Authorization` and expose `WWW-Authenticate`, on `401` and `403` too.
 - `restricted` and `personal` feeds answer a fetch without a token with `401` and `WWW-Authenticate: Bearer identity="required"`, never with `403`; `optional` feeds answer it with `200` and `identity="optional"`; a valid token of a domain without access gets `403`.
 
 ## Open questions

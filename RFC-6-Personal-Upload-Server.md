@@ -156,7 +156,7 @@ The `href` points to the configuration document. Its path is chosen by the serve
     { "path": "/feed/", "url": "https://tim.example.com/feed/", "rels": ["https://bigwide.net/ns/feed"] },
     { "path": "/pups/images/", "url": "https://tim.example.com/pups/images/", "properties": ["https://bigwide.net/ns/avatar", "https://bigwide.net/ns/banner"] },
     { "path": "/pups/pages/", "url": "https://tim.example.com/pups/pages/", "rels": ["https://bigwide.net/ns/webpup-pages"],
-      "properties": ["https://bigwide.net/ns/webpup-footer"], "link_properties": ["https://bigwide.net/ns/webpup-hidden"] }
+      "properties": ["https://bigwide.net/ns/webpup-footer"], "link_properties": ["https://bigwide.net/ns/webpup-hidden", "https://bigwide.net/ns/webpup-homepage"] }
   ],
   "host_meta_endpoint": "https://tim.example.com/pups/host-meta",
   "max_upload_bytes": 26214400,
@@ -345,7 +345,7 @@ A server may declare the following paths. All of them live at the domain root, s
 | `/feed.json` | The owner's main feed | this RFC, [RFC-7](https://github.com/bigwide-net/RFCs/blob/main/RFC-7-Feed-Publishing-with-PUPS.md) | your feed | `https://bigwide.net/ns/feed` | — |
 | `/feed/` | The files of the main feed, and the owner's other feeds | this RFC, RFC-7 | the files of your feed, and your other feeds | `https://bigwide.net/ns/feed` | — |
 | `/pups/images/` | The site's profile images: avatar and banner | this RFC | your site's profile images | — | `https://bigwide.net/ns/avatar` (URL), `https://bigwide.net/ns/banner` (URL) |
-| `/pups/pages/` | The site's pages and its footer, as Markdown | this RFC | your site's pages | `https://bigwide.net/ns/webpup-pages`, with the link property `https://bigwide.net/ns/webpup-hidden` | `https://bigwide.net/ns/webpup-footer` (URL) |
+| `/pups/pages/` | The site's pages and its footer, as Markdown | this RFC | your site's pages | `https://bigwide.net/ns/webpup-pages`, with the link properties `https://bigwide.net/ns/webpup-hidden` and `https://bigwide.net/ns/webpup-homepage` | `https://bigwide.net/ns/webpup-footer` (URL) |
 | `/pups/private/inbox.json` | The owner's inbox: mentions, replies and comments awaiting approval | [RFC-12](https://github.com/bigwide-net/RFCs/blob/main/RFC-12-Inbox-Feeds.md) | your inbox | — | — |
 
 Paths inside `/pups/private/` are added to this list by the specs that define them, such as `/pups/private/inbox.json`, the inbox feed of [Inbox Feeds (RFC-12)](https://github.com/bigwide-net/RFCs/blob/main/RFC-12-Inbox-Feeds.md). They have no `url`, link relations or properties, see [Private areas](#private-areas).
@@ -404,6 +404,8 @@ The site property `https://bigwide.net/ns/post-url-template` says where the site
 A link with the rel `https://bigwide.net/ns/webpup-pages` makes a Markdown file in `/pups/pages/` a page of the site. A renderer shows each page with its own URL, for example as a tab.
 
 ```json
+{ "rel": "https://bigwide.net/ns/webpup-pages", "type": "text/markdown", "href": "https://tim.example.com/pups/pages/welcome.md",
+  "properties": { "https://bigwide.net/ns/webpup-homepage": "true" } },
 { "rel": "https://bigwide.net/ns/webpup-pages", "type": "text/markdown", "href": "https://tim.example.com/pups/pages/now.md" },
 { "rel": "https://bigwide.net/ns/webpup-pages", "type": "text/markdown", "href": "https://tim.example.com/pups/pages/uses.md",
   "titles": { "default": "Uses", "de": "Werkzeuge" } },
@@ -414,7 +416,9 @@ A link with the rel `https://bigwide.net/ns/webpup-pages` makes a Markdown file 
 - **Order.** The pages are in the order of their links in `links`. [RFC 7033](https://www.rfc-editor.org/rfc/rfc7033#section-4.4.4) allows a JRD's order to express a preference. Apps change it with the `order` action of the [host-meta endpoint](#endpoint).
 - **Title.** The link's `titles` ([RFC 7033](https://www.rfc-editor.org/rfc/rfc7033#section-4.4.4.4)): the site's language, else `default`, else any. Without `titles`, a renderer uses the first heading of the file, else its file name.
 - **Hidden pages.** With the link property `https://bigwide.net/ns/webpup-hidden` set to `"true"`, the page has its URL but isn't listed, e.g. an imprint that only the footer links to.
-- **Links between pages.** A Markdown link to the file of a page, such as `[Imprint](/pups/pages/imprint.md)`, leads to that page.
+- **Home page.** With the link property `https://bigwide.net/ns/webpup-homepage` set to `"true"`, the page is the site's home page: a renderer shows it at the domain root instead of the main feed, and the feed on a page of its own. It isn't listed among the pages. If several links have the property, the first one counts; if its file is missing or empty, the main feed is the home page. To make another page the home page, an app adds the other link with the property and its own link again without it. The renderer's own configuration may name another home page, which takes precedence.
+- **Links between pages.** A Markdown link to the file of a page, such as `[Imprint](/pups/pages/imprint.md)`, leads to that page. A renderer may also show other Markdown files of the site that pages link to, such as `[Intro](/docs/intro.md)`, as pages of their own.
+- **Fetching.** A renderer asks for a page's file, and any other Markdown file it shows, with `Accept: text/markdown` as the preferred type (e.g. `text/markdown, text/plain;q=0.9`), so a server that serves the same URL as HTML to browsers answers with the Markdown, as Markdown browsers such as [bonBon](https://github.com/scripting/bonBon) expect. If the server answers `406`, the renderer may ask again with `Accept: */*`. An answer of type `text/html` is not the page. A renderer that runs in the browser doesn't help Markdown browsers, which don't run scripts; the server that serves it may link the Markdown file of a page from the HTML it serves for that page, with `<link rel="alternate" type="text/markdown" href="…">`, e.g. the home page's file from the HTML of `/`.
 
 ### Public URLs
 
@@ -925,7 +929,7 @@ A test runner takes a base URL and a test client with its own CIMD document, and
 
 ## Open questions
 
-- **Names and URIs.** The link relation `https://bigwide.net/ns/personal-storage`, the ownership property `https://bigwide.net/ns/pups#client`, the site properties `https://bigwide.net/ns/name`, `title`, `summary`, `theme-color`, `language`, `avatar`, `banner` and `webpup-footer`, the pages relation `https://bigwide.net/ns/webpup-pages` and its link property `webpup-hidden`, and the feed relation `https://bigwide.net/ns/feed` are placeholders, to be published on bigwide.net.
+- **Names and URIs.** The link relation `https://bigwide.net/ns/personal-storage`, the ownership property `https://bigwide.net/ns/pups#client`, the site properties `https://bigwide.net/ns/name`, `title`, `summary`, `theme-color`, `language`, `avatar`, `banner` and `webpup-footer`, the pages relation `https://bigwide.net/ns/webpup-pages` and its link properties `webpup-hidden` and `webpup-homepage`, and the feed relation `https://bigwide.net/ns/feed` are placeholders, to be published on bigwide.net.
 - **The list of well-known paths.** This RFC defines the initial list. Open: its home on bigwide.net, how new entries are proposed and accepted, and which link relations future entries bring.
 - **Sharing private files.** Should a later version let the owner share a private file with other people, e.g. with [Identity Tokens (RFC-10)](https://github.com/bigwide-net/RFCs/blob/main/RFC-10-Identity-Tokens.md)?
 - **Sender-constrained tokens.** Should a later version support [DPoP](https://www.rfc-editor.org/rfc/rfc9449), so that a copied token is useless without the app's key?
